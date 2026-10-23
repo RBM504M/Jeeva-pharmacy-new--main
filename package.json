@@ -1,0 +1,94 @@
+{
+  "name": "jeeva-pharmacy",
+  "productName": "Jeeva Pharmacy",
+  "description": "Indian Retail Pharmacy Management & POS System",
+  "author": "Jeeva Pharmacy",
+  "private": true,
+  "version": "1.0.1",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --port=3000 --host=127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist release",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev:electron": "concurrently -k \"vite --port=3000 --host=127.0.0.1\" \"wait-on tcp:127.0.0.1:3000 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:3000 electron .\"",
+    "start:electron": "electron .",
+    "pack:win": "vite build && electron-builder --win --dir",
+    "build:electron": "vite build && electron-builder --win"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.104.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "dotenv": "^17.2.3",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^8.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.6",
+    "cross-env": "^10.1.0",
+    "electron": "^44.8.0",
+    "electron-builder": "^26.15.3",
+    "jsdom": "^30.1.3",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.0",
+    "vitest": "^5.0.5",
+    "wait-on": "^9.5.1"
+  },
+  "build": {
+    "appId": "in.jeevapharmacy.pos",
+    "productName": "Jeeva Pharmacy",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Jeeva Pharmacy",
+      "artifactName": "${productName}-Full-Setup-v${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-v${version}-${arch}.${ext}"
+    }
+  }
+}

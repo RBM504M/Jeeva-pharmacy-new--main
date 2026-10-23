@@ -1,0 +1,383 @@
+// Prisma Schema for Jeeva Pharmacy — Indian Retail Pharmacy Management System
+// Compliant with Indian GST, DPDP Act, and Drugs and Cosmetics Act (Schedule H/H1)
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  PHARMACY_ASSISTANT
+}
+
+enum GSTRate {
+  GST_0   // Exempt / Nil rated
+  GST_5   // Essential life-saving formulations
+  GST_12  // Standard medicinal preparations & formulations
+  GST_18  // Nutritional supplements, surgical appliances & OTC cosmetics
+  GST_28  // Specialty items
+}
+
+enum DrugSchedule {
+  OTC         // Over-the-counter
+  SCHEDULE_H  // Prescription required, doctor registration mandatory
+  SCHEDULE_H1 // 3rd/4th generation antibiotics, psychotropic; strict separate register
+  SCHEDULE_X  // Narcotic / highly controlled substances
+  SCHEDULE_G  // Hormonal preparations with cautionary label
+}
+
+enum PrinterFormat {
+  THERMAL_80MM // 3-inch 80mm continuous thermal receipt roll
+  LASER_A4     // Standard full-sheet A4 / A5 laser tax invoice
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  CREDIT_DUE
+}
+
+enum InvoiceStatus {
+  COMPLETED
+  CANCELLED
+  PARTIALLY_REFUNDED
+  RETURNED
+}
+
+// System Users (Pharmacists, Billing Assistants, Store Admins)
+model User {
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  phone         String
+  role          Role           @default(PHARMACY_ASSISTANT)
+  passwordHash  String
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  invoices      Invoice[]
+  auditLogs     DpdpAuditLog[]
+  printerConfig PrinterConfig?
+
+  @@index([role])
+}
+
+// Hardware Printer Preferences & Terminal Controls
+model PrinterConfig {
+  id                  String        @id @default(uuid())
+  userId              String        @unique
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPrintingEnabled   Boolean       @default(false) // Toggle switch: ON/OFF
+  preferredFormat     PrinterFormat @default(THERMAL_80MM)
+  autoCutPaper        Boolean       @default(true)
+  printTaxBreakdown   Boolean       @default(true)
+  printDoctorDetails  Boolean       @default(true)
+  thermalPaperWidthMm Int           @default(80)
+  customFooterNote    String?       @default("Prompt medicines recovery. Goods once sold cannot be returned without original batch bill.")
+
+  updatedAt           DateTime      @updatedAt
+}
+
+// Product Master Catalogue with HSN & Global Barcode
+model Product {
+  id                 String       @id @default(uuid())
+  name               String       // Commercial brand name e.g. "Dolo 650"
+  genericComposition String       // Salt composition e.g. "Paracetamol IP 650mg"
+  manufacturer       String       // Pharmaceutical company e.g. "Micro Labs Ltd"
+  hsnCode            String       // Mandatory 4-8 digit Indian HSN e.g. "3004"
+  barcode            String       @unique // Global EAN-13 or UPC barcode
+  stripSize          Int          @default(10) // Number of tablets/capsules per strip (dual-unit conversion factor)
+  drugSchedule       DrugSchedule @default(OTC)
+  reorderLevelUnits  Int          @default(50) // Atomic tablet threshold for low-stock alerts
+  defaultGstRate     GSTRate      @default(GST_12)
+  rackLocation       String?      // Pharmacy shelf / bin identifier e.g. "Shelf A-12"
+  isActive           Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  batches            Batch[]
+
+  @@index([barcode])
+  @@index([hsnCode])
+  @@index([name])
+}
+
+// Inventory Batches (Tracks Expiry, Stock, Cost & Selling Prices)
+model Batch {
+  id                   String       @id @default(uuid())
+  productId            String
+  product              Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batchNumber          String       // Manufacturer batch code e.g. "DL24K09"
+  barcode              String?      // Batch-specific secondary barcode if applicable
+  expiryDate           DateTime     // Critical for 30/60/90-day expiry triage
+  manufacturingDate    DateTime
+  costPricePerStrip    Decimal      @db.Decimal(10, 2)
+  mrpPerStrip          Decimal      @db.Decimal(10, 2)
+  sellingPricePerStrip Decimal      @db.Decimal(10, 2)
+  gstRate              GSTRate      @default(GST_12)
+  
+  // Dual-Unit Fractional Inventory Tracking:
+  // Stock is stored at the atomic unit (Total Tablets/Capsules).
+  // Strips remaining = Math.floor(totalTablets / stripSize)
+  // Loose tablets remaining = totalTablets % stripSize
+  totalTablets         Int          @default(0) 
+
+  vendorId             String?
+  vendor               Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  invoiceItems         InvoiceItem[]
+  purchaseItems        PurchaseOrderItem[]
+
+  @@unique([productId, batchNumber])
+  @@index([expiryDate])
+  @@index([batchNumber])
+}
+
+// Sales Tax Invoice (Full Indian GST Breakdown & Patient Rx)
+model Invoice {
+  id                 String         @id @default(uuid())
+  invoiceNumber      String         @unique // Formatted e.g. "JP/2026-27/01892"
+  invoiceDate        DateTime       @default(now())
+  
+  // Patient & Doctor Information (DPDP & Schedule H/H1 compliance)
+  patientName        String
+  patientContact     String?        // Encrypted or masked at rest for DPDP
+  doctorName         String?
+  doctorRegNumber    String?        // Mandatory for Schedule H1 drugs
+  dpdpConsentGiven   Boolean        @default(true)
+
+  // Financial Ledger
+  subtotal           Decimal        @db.Decimal(10, 2) // Base price without tax
+  totalCgst          Decimal        @db.Decimal(10, 2) // Central GST (Intra-state)
+  totalSgst          Decimal        @db.Decimal(10, 2) // State GST (Intra-state)
+  totalIgst          Decimal        @db.Decimal(10, 2) // Integrated GST (Inter-state)
+  roundOff           Decimal        @db.Decimal(10, 2) // Standard Indian round-off (+/- paise)
+  grandTotal         Decimal        @db.Decimal(10, 2) // Final payable in INR
+  
+  paymentMethod      PaymentMethod  @default(UPI)
+  status             InvoiceStatus  @default(COMPLETED)
+  isInterState       Boolean        @default(false) // If true, IGST is used instead of CGST/SGST
+
+  userId             String
+  user               User           @relation(fields: [userId], references: [id])
+
+  items              InvoiceItem[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([invoiceNumber])
+  @@index([invoiceDate])
+  @@index([patientContact])
+}
+
+// Line Items in POS Invoice
+model InvoiceItem {
+  id                       String   @id @default(uuid())
+  invoiceId                String
+  invoice                  Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  batchId                  String
+  batch                    Batch    @relation(fields: [batchId], references: [id])
+
+  // Dual-Unit Sales Quantities
+  quantityStrips           Int      @default(0) // Full strips sold
+  quantityLooseTablets     Int      @default(0) // Loose individual tablets sold
+  totalTabletsSold         Int      // quantityStrips * stripSize + quantityLooseTablets
+  
+  unitPricePerTablet       Decimal  @db.Decimal(10, 2)
+  stripSellingPrice        Decimal  @db.Decimal(10, 2)
+
+  // GST Breakdown
+  hsnCodeSnapshot          String
+  gstRate                  GSTRate
+  taxableAmount            Decimal  @db.Decimal(10, 2)
+  cgstAmount               Decimal  @db.Decimal(10, 2)
+  sgstAmount               Decimal  @db.Decimal(10, 2)
+  igstAmount               Decimal  @db.Decimal(10, 2)
+  totalAmount              Decimal  @db.Decimal(10, 2)
+
+  createdAt                DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([batchId])
+}
+
+// Wholesalers & Distributors
+model Vendor {
+  id                String          @id @default(uuid())
+  name              String          // Distributor Agency Name
+  companyName       String
+  contactPerson     String?
+  phone             String
+  email             String?
+  gstin             String          @unique // 15-character Indian GSTIN
+  drugLicenseNumber String?         // 20B/21B Wholesale Drug License
+  state             String          @default("Tamil Nadu")
+  creditPeriodDays  Int             @default(30)
+  balanceDue        Decimal         @default(0.00) @db.Decimal(10, 2)
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  batches           Batch[]
+  purchaseOrders    PurchaseOrder[]
+
+  @@index([gstin])
+}
+
+// Inward Stock Consignment Purchase Order
+model PurchaseOrder {
+  id               String              @id @default(uuid())
+  orderNumber      String              @unique
+  vendorId         String
+  vendor           Vendor              @relation(fields: [vendorId], references: [id])
+  vendorInvoiceNo  String
+  invoiceDate      DateTime
+  totalTaxable     Decimal             @db.Decimal(10, 2)
+  totalTax         Decimal             @db.Decimal(10, 2)
+  grandTotal       Decimal             @db.Decimal(10, 2)
+  isPaid           Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  items            PurchaseOrderItem[]
+}
+
+model PurchaseOrderItem {
+  id                 String        @id @default(uuid())
+  purchaseOrderId    String
+  purchaseOrder      PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  batchId            String
+  batch              Batch         @relation(fields: [batchId], references: [id])
+  quantityStrips     Int
+  costPricePerStrip  Decimal       @db.Decimal(10, 2)
+  taxRate            GSTRate
+  taxAmount          Decimal       @db.Decimal(10, 2)
+  totalAmount        Decimal       @db.Decimal(10, 2)
+}
+
+// Indian DPDP Act Compliance Audit Log (Patient Data Access & Prescriptions)
+model DpdpAuditLog {
+  id                 String   @id @default(uuid())
+  patientPhoneMasked String   // e.g. "XXXXXX8912"
+  action             String   // e.g. "PRESCRIPTION_DISPENSED", "PATIENT_RECORD_VIEW"
+  operatorId         String
+  operator           User     @relation(fields: [operatorId], references: [id])
+  consentTimestamp   DateTime @default(now())
+  accessReason       String   // e.g. "Schedule H dispensing billing record"
+  retentionUntil     DateTime // Retention cycle mandated under Pharmacy Council rules
+  ipAddress          String?
+  createdAt          DateTime @default(now())
+
+  @@index([patientPhoneMasked])
+  @@index([operatorId])
+}
+
+enum StockAdjustmentType {
+  MANUAL_ADJUSTMENT      // Physical stock audit / recount
+  SALES_DEDUCTION        // POS checkout billing dispensing
+  VENDOR_RETURN          // Return to pharmaceutical distributor / wholesaler
+  INWARD_PURCHASE        // GRN inward purchase from supplier
+  DAMAGE_WRITE_OFF       // Breakage / physical spoilage
+  EXPIRY_REMOVAL         // CDSCO quarantine / disposal
+  CUSTOMER_RETURN        // Patient return / sales credit note
+}
+
+// Stock Audit Log for Complete Historical Accountability
+// Compliant with Drugs and Cosmetics Act & Indian CDSCO Inspection Standards
+model StockAuditLog {
+  id                 String              @id @default(uuid())
+  timestamp          DateTime            @default(now())
+  productId          String
+  productName        String              // Historical snapshot
+  batchId            String
+  batchNumber        String              // Historical snapshot
+  adjustmentType     StockAdjustmentType
+  quantityTablets    Int                 // Signed change in atomic units (+ or -)
+  quantityDisplay    String              // Formatted e.g. "-1 Strip, 2 Tabs"
+  previousStock      Int                 // Atomic units before adjustment
+  newStock           Int                 // Atomic units after adjustment
+  reason             String              // Detailed justification / discrepancy reason
+  referenceId        String?             // Invoice number, Debit Note, or GRN
+  operatorName       String              // Pharmacist / Assistant who performed the action
+  operatorRole       Role                // Role at time of audit
+  costImpact         Decimal?            @db.Decimal(10, 2) // Optional financial valuation
+
+  createdAt          DateTime            @default(now())
+
+  @@index([productId])
+  @@index([batchId])
+  @@index([adjustmentType])
+  @@index([timestamp])
+  @@index([referenceId])
+}
+
+enum BackupFrequency {
+  HOURLY
+  DAILY
+  TWICE_DAILY
+  WEEKLY
+  ON_SETTLEMENT
+}
+
+// Automated Database Backup & Disaster Recovery Archival Configuration
+// Indian Income Tax Act Sec 44AA & GST Rule 56 Mandate 8-Year Account Retention
+model BackupConfig {
+  id                  String          @id @default(uuid())
+  isEnabled           Boolean         @default(true)
+  frequency           BackupFrequency @default(DAILY)
+  scheduledTime       String          @default("23:00") // 11:00 PM closing
+  triggerOnDayClose   Boolean         @default(true)
+  triggerOnBulkInward Boolean         @default(true)
+  localBrowserBackup  Boolean         @default(true)
+  autoDownloadFolder  Boolean         @default(false)
+  cloudOffsiteMirror  Boolean         @default(true)
+  emailDispatch       Boolean         @default(true)
+  cloudEndpoint       String?         @default("s3://in-south-pharmacy-vault.jeevapharmacy.in/chennai-retail-01")
+  notificationEmail   String          @default("pharmacist@jeevapharmacy.in")
+  retentionDays       Int             @default(2920) // 8 years statutory
+  isEncrypted         Boolean         @default(true)
+  encryptionAlgorithm String          @default("AES-256-GCM")
+  passphraseHint      String?         @default("Store DL Form 20/21 Master Key")
+  maskDpdpData        Boolean         @default(false)
+
+  lastBackupAt        DateTime?
+  lastChecksum        String?
+  lastSizeBytes       Int?
+  updatedAt           DateTime        @updatedAt
+}
+
+// Historical Backup Archive Logs & Snapshots
+model BackupSnapshotRecord {
+  id                   String   @id @default(uuid())
+  filename             String   @unique
+  timestamp            DateTime @default(now())
+  triggerType          String   // AUTOMATED_SCHEDULED, DAY_CLOSE_SETTLEMENT, MANUAL_INSTANT, PRE_RESTORE_ROLLBACK
+  sizeBytes            Int
+  productsCount        Int
+  batchesCount         Int
+  invoicesCount        Int
+  vendorsCount         Int
+  stockAuditLogsCount  Int
+  dpdpLogsCount        Int
+  checksumSha256       String
+  isEncrypted          Boolean  @default(true)
+  status               String   @default("SUCCESS") // SUCCESS, WARNING, FAILED
+  destinationsArchived String[] // Encrypted Browser Vault, AWS S3, Email Dispatch
+  restorable           Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  @@index([timestamp])
+  @@index([triggerType])
+}
+
+
