@@ -4,7 +4,7 @@
   "description": "Indian Retail Pharmacy Management & POS System",
   "author": "Jeeva Pharmacy",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --port=3000 --host=127.0.0.1",

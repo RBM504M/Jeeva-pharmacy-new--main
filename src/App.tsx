@@ -287,7 +287,7 @@ const PharmacyAppContent: React.FC = () => {
               <path d="M4 8C4 5.79086 5.79086 4 8 4H16V12H8C5.79086 12 4 10.2091 4 8Z" fill="#10b981" />
               <path d="M16 4H24C26.2091 4 28 5.79086 28 8C28 10.2091 26.2091 12 24 12H16V4Z" fill="#0084ff" />
             </svg>
-            <span className="text-[9px] text-slate-400 font-mono">v1.0.1</span>
+            <span className="text-[9px] text-slate-400 font-mono">v1.0.2</span>
           </div>
         </div>
       </aside>
