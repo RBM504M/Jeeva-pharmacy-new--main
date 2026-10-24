@@ -70,31 +70,8 @@ export const ExpiryManagementView: React.FC<ExpiryManagementViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Sample Disposal Register records
-  const [disposalLogs, setDisposalLogs] = useState<DisposalRecord[]>([
-    {
-      id: 'disp-01',
-      disposalDate: '2026-10-12',
-      batchNumber: 'OLD-901',
-      productName: 'Amoxicillin 250mg Dry Syrup',
-      stripsDisposed: 12,
-      costLoss: 384.0,
-      authorizedPharmacist: 'Chief Pharmacist (Admin)',
-      incinerationMethod: 'Chemical Inactivation & Biomedical Incineration',
-      disposalCertificateNo: 'PCB-DISP-2026-081',
-    },
-    {
-      id: 'disp-02',
-      disposalDate: '2026-09-28',
-      batchNumber: 'EXP-411',
-      productName: 'Ciprofloxacin Eye Drops 5ml',
-      stripsDisposed: 18,
-      costLoss: 450.0,
-      authorizedPharmacist: 'Chief Pharmacist (Admin)',
-      incinerationMethod: 'Authorized Bio-Hazard Contractor (TNPCB)',
-      disposalCertificateNo: 'PCB-DISP-2026-074',
-    },
-  ]);
+  // Disposal Register records (Empty default state)
+  const [disposalLogs, setDisposalLogs] = useState<DisposalRecord[]>([]);
 
   // Modals
   const [showDisposalModal, setShowDisposalModal] = useState<boolean>(false);
@@ -552,7 +529,7 @@ export const ExpiryManagementView: React.FC<ExpiryManagementViewProps> = ({
                       <td className="py-2.5 px-3 text-center">
                         <span
                           className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            item.zone === 'EXPIRED'
+                            item.daysRemaining <= 0
                               ? 'bg-rose-100 text-rose-800'
                               : item.zone === 'CRITICAL_30'
                               ? 'bg-orange-100 text-orange-800'
@@ -561,7 +538,7 @@ export const ExpiryManagementView: React.FC<ExpiryManagementViewProps> = ({
                               : 'bg-yellow-100 text-yellow-800'
                           }`}
                         >
-                          {item.zone}
+                          {item.daysRemaining <= 0 ? 'EXPIRED' : item.zone}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center">

@@ -20,11 +20,27 @@ interface QuickReferenceMenuIndexProps {
   onNavigate: (view: AppView, subtab?: string) => void;
 }
 
+interface MenuSectionItem {
+  label: string;
+  shortcut?: string;
+  view: string;
+  subtab?: string;
+}
+
+interface MenuSection {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  badge: string;
+  color: string;
+  items: MenuSectionItem[];
+}
+
 export const QuickReferenceMenuIndex: React.FC<QuickReferenceMenuIndexProps> = ({ onNavigate }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const menuSections = [
+  const menuSections: MenuSection[] = [
     {
       id: 'MASTERS',
       title: 'File / Masters',

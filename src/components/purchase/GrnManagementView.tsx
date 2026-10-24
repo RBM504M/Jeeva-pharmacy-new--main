@@ -84,7 +84,7 @@ interface GrnRecord {
 export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
   initialTab = 'GRN_REGISTER',
 }) => {
-  const { vendors, products, addBatch, updateBatchStock } = usePharmacy();
+  const { vendors, products, addBatch, inwardStockBatch } = usePharmacy();
 
   const [activeTab, setActiveTab] = useState<GrnTab>(initialTab);
   const [searchQuery, setSearchQuery] = useState('');
@@ -102,163 +102,8 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Sample GRN Records
-  const [grnList, setGrnList] = useState<GrnRecord[]>([
-    {
-      id: 'grn-001',
-      grnNumber: 'GRN-2026-089',
-      grnDate: '2026-10-18',
-      poNumber: 'PO-2026-003',
-      supplierInvoiceNo: 'APL-99824',
-      supplierInvoiceDate: '2026-10-17',
-      vendorId: vendors[0]?.id || 'v1',
-      vendorName: vendors[0]?.name || 'Apollo Medical Supplies Ltd',
-      itemsCount: 3,
-      totalReceivedUnits: 240,
-      totalAcceptedUnits: 240,
-      totalRejectedUnits: 0,
-      grossAmount: 14200.0,
-      taxAmount: 1704.0,
-      netPayableAmount: 15904.0,
-      status: 'POSTED_TO_STOCK',
-      remarks: 'Seals intact, temperature log verified under 25C',
-      items: [
-        {
-          productName: 'Telmisartan 40mg',
-          batchNumber: 'TL26-881',
-          expiryDate: '2027-04-30',
-          stripSize: 10,
-          receivedQty: 80,
-          freeQty: 8,
-          rejectedQty: 0,
-          acceptedQty: 88,
-          unitCost: 55.0,
-          mrp: 85.0,
-          gstRate: 12,
-          taxableAmount: 4400.0,
-          lineTotal: 4928.0,
-        },
-        {
-          productName: 'Rosuvastatin 10mg',
-          batchNumber: 'RS26-402',
-          expiryDate: '2027-08-31',
-          stripSize: 10,
-          receivedQty: 60,
-          freeQty: 0,
-          rejectedQty: 0,
-          acceptedQty: 60,
-          unitCost: 82.0,
-          mrp: 125.0,
-          gstRate: 12,
-          taxableAmount: 4920.0,
-          lineTotal: 5510.4,
-        },
-        {
-          productName: 'Vitamin C 500mg Chewable',
-          batchNumber: 'VC26-119',
-          expiryDate: '2026-11-30',
-          stripSize: 15,
-          receivedQty: 100,
-          freeQty: 10,
-          rejectedQty: 0,
-          acceptedQty: 110,
-          unitCost: 33.6,
-          mrp: 55.0,
-          gstRate: 12,
-          taxableAmount: 3360.0,
-          lineTotal: 3763.2,
-        },
-      ],
-    },
-    {
-      id: 'grn-002',
-      grnNumber: 'GRN-2026-090',
-      grnDate: '2026-10-19',
-      poNumber: 'PO-2026-002',
-      supplierInvoiceNo: 'MP-8723',
-      supplierInvoiceDate: '2026-10-18',
-      vendorId: vendors[1]?.id || 'v2',
-      vendorName: vendors[1]?.name || 'MedPlus Wholesale Distributors',
-      itemsCount: 2,
-      totalReceivedUnits: 145,
-      totalAcceptedUnits: 140,
-      totalRejectedUnits: 5,
-      grossAmount: 9240.0,
-      taxAmount: 1108.8,
-      netPayableAmount: 10348.8,
-      status: 'PENDING_CONFIRMATION',
-      remarks: '5 strips of Amoxicillin packaging crushed in transit. Rejected line recorded.',
-      items: [
-        {
-          productName: 'Metformin 500mg SR',
-          batchNumber: 'MF26-904',
-          expiryDate: '2027-09-30',
-          stripSize: 10,
-          receivedQty: 100,
-          freeQty: 5,
-          rejectedQty: 0,
-          acceptedQty: 105,
-          unitCost: 24.0,
-          mrp: 38.0,
-          gstRate: 12,
-          taxableAmount: 2400.0,
-          lineTotal: 2688.0,
-        },
-        {
-          productName: 'Amoxicillin 500mg',
-          batchNumber: 'AX26-302',
-          expiryDate: '2027-01-31',
-          stripSize: 10,
-          receivedQty: 45,
-          freeQty: 0,
-          rejectedQty: 5,
-          acceptedQty: 40,
-          unitCost: 46.5,
-          mrp: 72.0,
-          gstRate: 12,
-          taxableAmount: 1860.0,
-          lineTotal: 2083.2,
-        },
-      ],
-    },
-    {
-      id: 'grn-003',
-      grnNumber: 'GRN-2026-091',
-      grnDate: '2026-10-20',
-      poNumber: 'PO-2026-005',
-      supplierInvoiceNo: 'SP-1092',
-      supplierInvoiceDate: '2026-10-19',
-      vendorId: vendors[2]?.id || 'v3',
-      vendorName: vendors[2]?.name || 'Sun Pharma Regional Depot',
-      itemsCount: 1,
-      totalReceivedUnits: 50,
-      totalAcceptedUnits: 0,
-      totalRejectedUnits: 50,
-      grossAmount: 4080.0,
-      taxAmount: 489.6,
-      netPayableAmount: 0.0,
-      status: 'CANCELLED',
-      cancelReason: 'Near-expiry stock supplied (less than 90 days shelf life) - rejected at gate',
-      remarks: 'Returned immediately on delivery truck',
-      items: [
-        {
-          productName: 'Atorvastatin 20mg',
-          batchNumber: 'AT25-012',
-          expiryDate: '2026-11-15',
-          stripSize: 10,
-          receivedQty: 50,
-          freeQty: 0,
-          rejectedQty: 50,
-          acceptedQty: 0,
-          unitCost: 81.6,
-          mrp: 120.0,
-          gstRate: 12,
-          taxableAmount: 0,
-          lineTotal: 0,
-        },
-      ],
-    },
-  ]);
+  // GRN Records (Empty default state)
+  const [grnList, setGrnList] = useState<GrnRecord[]>([]);
 
   // Selected Detail Modal & Actions
   const [selectedGrn, setSelectedGrn] = useState<GrnRecord | null>(null);
@@ -329,7 +174,7 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
       supplierInvoiceNo: newGrnSupplierInvNo,
       supplierInvoiceDate: newGrnSupplierInvDate,
       vendorId: vendor?.id || 'v1',
-      vendorName: vendor?.name || 'Authorized Wholesaler',
+      vendorName: vendor?.companyName || vendor?.name || 'Authorized Wholesaler',
       itemsCount: newGrnRows.length,
       totalReceivedUnits: totalReceived,
       totalAcceptedUnits: totalAccepted,
@@ -356,17 +201,21 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
           g.items.forEach((item) => {
             const prod = products.find((p) => p.name === item.productName);
             if (prod) {
-              addBatch({
-                productId: prod.id,
-                batchNumber: item.batchNumber,
-                expiryDate: item.expiryDate,
-                manufacturingDate: '2026-01-01',
-                costPricePerStrip: item.unitCost,
-                mrpPerStrip: item.mrp,
-                sellingPricePerStrip: item.mrp,
-                totalTablets: item.acceptedQty * item.stripSize,
-                gstRate: item.gstRate as any,
-              });
+              inwardStockBatch(
+                {
+                  productId: prod.id,
+                  batchNumber: item.batchNumber,
+                  expiryDate: item.expiryDate,
+                  manufacturingDate: '2026-01-01',
+                  costPricePerStrip: item.unitCost,
+                  mrpPerStrip: item.mrp,
+                  sellingPricePerStrip: item.mrp,
+                  totalTablets: item.acceptedQty * item.stripSize,
+                  gstRate: item.gstRate as any,
+                  vendorId: g.vendorId,
+                },
+                g.supplierInvoiceNo
+              );
             }
           });
           return { ...g, status: 'POSTED_TO_STOCK' };
@@ -659,7 +508,7 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
             <option value="ALL">All Wholesalers</option>
             {vendors.map((v) => (
               <option key={v.id} value={v.id}>
-                {v.name}
+                {v.companyName || v.name}
               </option>
             ))}
           </select>
@@ -808,7 +657,7 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
               return (
                 <div key={vendor.id} className="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-xs">{vendor.name}</span>
+                    <span className="font-bold text-slate-900 text-xs">{vendor.companyName || vendor.name}</span>
                     <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-mono">
                       {vendorGrns.length} GRNs
                     </span>
@@ -1050,7 +899,7 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
                   >
                     {vendors.map((v) => (
                       <option key={v.id} value={v.id}>
-                        {v.name}
+                        {v.companyName || v.name}
                       </option>
                     ))}
                   </select>

@@ -16,6 +16,8 @@ import {
   Calendar,
   RotateCcw,
   ShoppingCart,
+  X,
+  Package,
 } from 'lucide-react';
 import { usePharmacy } from '../../context/PharmacyContext';
 import {
@@ -54,11 +56,26 @@ export const PosBillingView: React.FC = () => {
 
   // Search & Selector State
   const [searchQuery, setSearchQuery] = useState('');
+  const [isTopSearchOpen, setIsTopSearchOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
   const [selectedUnitType, setSelectedUnitType] = useState<UnitType>('STRIP');
   const [quantityInput, setQuantityInput] = useState<number>(1);
   const [scanNotification, setScanNotification] = useState<string | null>(null);
+
+  // Inline Draft Row State (for adding item directly by typing code or name in the grid row)
+  const [draftCode, setDraftCode] = useState('');
+  const [draftName, setDraftName] = useState('');
+  const [draftProduct, setDraftProduct] = useState<Product | null>(null);
+  const [draftBatch, setDraftBatch] = useState<Batch | null>(null);
+  const [draftQty, setDraftQty] = useState<number>(1);
+  const [draftUnit, setDraftUnit] = useState<UnitType>('STRIP');
+  const [showCodeDropdown, setShowCodeDropdown] = useState(false);
+  const [showNameDropdown, setShowNameDropdown] = useState(false);
+
+  // Product Lookup Modal State (F2 or search icon)
+  const [isLookupModalOpen, setIsLookupModalOpen] = useState(false);
+  const [lookupSearchQuery, setLookupSearchQuery] = useState('');
 
   // Cart & Line Items
   const [cartItems, setCartItems] = useState<PosCartItem[]>([]);
@@ -82,11 +99,21 @@ export const PosBillingView: React.FC = () => {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const draftCodeInputRef = useRef<HTMLInputElement>(null);
+  const draftNameInputRef = useRef<HTMLInputElement>(null);
+  const draftQtyInputRef = useRef<HTMLInputElement>(null);
 
-  // Keyboard shortcut: Pressing '/' focuses search input
+  // Keyboard shortcut: Pressing 'F2' toggles Product Catalog Lookup; '/' focuses top search input
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      if (e.key === '/' && document.activeElement !== searchInputRef.current) {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        setIsLookupModalOpen((prev) => !prev);
+      } else if (
+        e.key === '/' &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA'
+      ) {
         e.preventDefault();
         searchInputRef.current?.focus();
       }
@@ -113,7 +140,58 @@ export const PosBillingView: React.FC = () => {
     );
   }, [products, searchQuery]);
 
-  // Product Selection helper
+  // Inline Code Autocomplete Matches
+  const codeMatches = useMemo(() => {
+    if (!draftCode.trim()) return [];
+    const q = draftCode.trim().toLowerCase();
+    return products
+      .filter(
+        (p) =>
+          p.barcode.toLowerCase().includes(q) ||
+          p.hsnCode.toLowerCase().includes(q) ||
+          p.id.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  }, [products, draftCode]);
+
+  // Inline Name Autocomplete Matches
+  const nameMatches = useMemo(() => {
+    if (!draftName.trim()) return [];
+    const q = draftName.trim().toLowerCase();
+    return products
+      .filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.genericComposition.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  }, [products, draftName]);
+
+  // Select a product for the inline draft row
+  const selectDraftProduct = (prod: Product, preferredBatch?: Batch) => {
+    setDraftProduct(prod);
+    setDraftCode(prod.hsnCode || prod.barcode || prod.id);
+    setDraftName(prod.name);
+    setShowCodeDropdown(false);
+    setShowNameDropdown(false);
+
+    // Pick earliest non-expired batch with available stock
+    const prodBatches = batches
+      .filter((b) => b.productId === prod.id && b.totalTablets > 0)
+      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+
+    const chosenBatch =
+      preferredBatch || prodBatches[0] || batches.find((b) => b.productId === prod.id) || null;
+    setDraftBatch(chosenBatch);
+    setDraftQty(1);
+
+    setTimeout(() => {
+      draftQtyInputRef.current?.focus();
+      draftQtyInputRef.current?.select();
+    }, 50);
+  };
+
+  // Product Selection helper (for modal and top search)
   const handleSelectProduct = (product: Product) => {
     setSelectedProductId(product.id);
     const availableBatches = batches.filter((b) => b.productId === product.id && b.totalTablets > 0);
@@ -169,6 +247,38 @@ export const PosBillingView: React.FC = () => {
     setSelectedBatchId('');
     setQuantityInput(1);
     setCheckoutError(null);
+  };
+
+  // Add the prepared inline draft item to the cart
+  const handleAddDraftToCart = () => {
+    if (!draftProduct) {
+      alert('Please search and select a medicine product first.');
+      return;
+    }
+    if (!draftBatch) {
+      alert(`No batch available for ${draftProduct.name}. Please inward stock first.`);
+      return;
+    }
+    if (draftQty <= 0) {
+      alert('Quantity must be at least 1.');
+      return;
+    }
+    addItemToCart(draftProduct, draftBatch, draftUnit, draftQty);
+
+    // Reset draft row for next entry
+    setDraftProduct(null);
+    setDraftBatch(null);
+    setDraftCode('');
+    setDraftName('');
+    setDraftQty(1);
+    setDraftUnit('STRIP');
+    setShowCodeDropdown(false);
+    setShowNameDropdown(false);
+
+    // Auto-focus name field for subsequent fast entry
+    setTimeout(() => {
+      draftNameInputRef.current?.focus();
+    }, 50);
   };
 
   const removeCartItem = (cartItemId: string) => {
@@ -596,7 +706,139 @@ export const PosBillingView: React.FC = () => {
         </div>
       </div>
 
-      {/* Product Entry Grid (Keep only 1 empty row for input, delete redundant empty rows) */}
+      {/* Quick Search & Barcode Lookup Bar */}
+      <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-xs">
+        <div className="relative">
+          <div className="relative flex items-center">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsTopSearchOpen(true);
+              }}
+              onFocus={() => setIsTopSearchOpen(true)}
+              placeholder="Quick search medicine by Name, Salt, Barcode, HSN or Code (Press '/' to focus, F2 for catalog)..."
+              className="w-full pl-9 pr-28 py-2 border border-slate-300 rounded-md text-xs focus:outline-hidden focus:border-sky-500 bg-slate-50 focus:bg-white"
+            />
+            <div className="absolute right-2 flex items-center gap-1.5">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="text-slate-400 hover:text-slate-600 text-xs px-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsLookupModalOpen(true)}
+                className="px-2 py-0.5 bg-sky-100 hover:bg-sky-200 text-sky-800 rounded text-[11px] font-semibold cursor-pointer transition-colors"
+                title="Open Product Catalog (F2)"
+              >
+                Catalog (F2)
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Search Dropdown Results */}
+          {isTopSearchOpen && searchQuery.trim() && (
+            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-72 overflow-y-auto divide-y divide-slate-100">
+              <div className="p-2 bg-slate-50 text-[11px] font-bold text-slate-500 flex justify-between items-center">
+                <span>Matching Products ({filteredProducts.length})</span>
+                <button
+                  type="button"
+                  onClick={() => setIsTopSearchOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+              {filteredProducts.length === 0 ? (
+                <div className="p-4 text-center text-xs text-slate-400">
+                  No medicines match "{searchQuery}". Check spelling or add new product in Master.
+                </div>
+              ) : (
+                filteredProducts.map((p) => {
+                  const prodBatches = batches.filter((b) => b.productId === p.id && b.totalTablets > 0);
+                  const totalTabs = prodBatches.reduce((acc, b) => acc + b.totalTablets, 0);
+                  const stock = formatDualUnitStock(totalTabs, p.stripSize);
+                  const earliestBatch = prodBatches.sort(
+                    (a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()
+                  )[0];
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="p-2.5 hover:bg-sky-50/60 transition-colors flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900">{p.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded font-mono">
+                            {p.hsnCode || p.barcode}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.2 bg-blue-50 text-blue-700 rounded font-semibold">
+                            {p.drugSchedule}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                          {p.genericComposition}
+                        </div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-3 mt-0.5">
+                          <span>Pack: 1x{p.stripSize || 10}</span>
+                          {earliestBatch && (
+                            <span>
+                              Batch: {earliestBatch.batchNumber} (Exp: {earliestBatch.expiryDate})
+                            </span>
+                          )}
+                          <span>Rack: {p.rackLocation || 'MAIN'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right">
+                          <div className="font-mono font-bold text-slate-900">
+                            ₹ {earliestBatch ? earliestBatch.mrpPerStrip.toFixed(2) : '0.00'}
+                          </div>
+                          <div
+                            className={`text-[10px] font-semibold ${
+                              totalTabs > 0 ? 'text-emerald-700' : 'text-rose-600'
+                            }`}
+                          >
+                            {totalTabs > 0 ? `${stock.displayString}` : 'Out of Stock'}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={totalTabs <= 0 || !earliestBatch}
+                          onClick={() => {
+                            if (earliestBatch) {
+                              addItemToCart(p, earliestBatch, 'STRIP', 1);
+                              setIsTopSearchOpen(false);
+                              setSearchQuery('');
+                            }
+                          }}
+                          className="px-2.5 py-1.5 bg-[#0084ff] hover:bg-blue-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add to Bill</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Product Entry Grid */}
       <div className="bg-white border border-slate-200 rounded-lg shadow-xs overflow-hidden">
         {cartItems.length > 0 && (
           <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
@@ -634,44 +876,27 @@ export const PosBillingView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {(cartItems.length === 0 ? [null] : [...cartItems, null]).map((item, idx) => {
+              {/* 1. Existing Cart Items */}
+              {cartItems.map((item, idx) => {
                 const rowNum = idx + 1;
                 return (
-                  <tr key={item ? item.cartItemId : `empty_row_${idx}`} className="hover:bg-sky-50/30 transition-colors">
+                  <tr key={item.cartItemId} className="hover:bg-sky-50/30 transition-colors">
                     <td className="py-1.5 px-2 text-center font-semibold text-slate-500">{rowNum}</td>
-                    
+
                     {/* Product Code */}
                     <td className="py-1.5 px-2">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          value={item ? item.product.hsnCode || item.product.barcode : ''}
-                          placeholder=""
-                          readOnly
-                          className="w-full py-1 pl-2 pr-6 border border-slate-300 rounded text-xs bg-white font-mono"
-                        />
-                        <Search
-                          onClick={() => {
-                            if (!item) {
-                              const p = products[idx % products.length] || products[0];
-                              const b = batches.find((batch) => batch.productId === p.id && batch.totalTablets > 0) || batches[0];
-                              if (p && b) addItemToCart(p, b, 'STRIP', 1);
-                            }
-                          }}
-                          className="w-3.5 h-3.5 text-slate-400 hover:text-sky-600 absolute right-1.5 cursor-pointer"
-                        />
-                      </div>
+                      <input
+                        type="text"
+                        value={item.product.hsnCode || item.product.barcode}
+                        readOnly
+                        className="w-full py-1 px-2 border border-slate-200 rounded text-xs bg-slate-50 font-mono text-slate-600"
+                      />
                     </td>
 
                     {/* Product Name */}
                     <td className="py-1.5 px-2">
-                      <input
-                        type="text"
-                        value={item ? item.product.name : ''}
-                        placeholder={!item ? 'Click search icon or scan barcode to add item' : ''}
-                        readOnly
-                        className="w-full py-1 px-2 border border-slate-300 rounded text-xs bg-white font-medium text-slate-800"
-                      />
+                      <div className="font-medium text-slate-900 text-xs">{item.product.name}</div>
+                      <div className="text-[10px] text-slate-400 truncate">{item.product.genericComposition}</div>
                     </td>
 
                     {/* Quantity */}
@@ -679,49 +904,40 @@ export const PosBillingView: React.FC = () => {
                       <input
                         type="number"
                         min={1}
-                        value={item ? item.quantity : 1}
+                        value={item.quantity}
                         onChange={(e) => {
-                          if (item) {
-                            updateCartItemQuantity(item.cartItemId, Math.max(1, parseInt(e.target.value) || 1));
-                          }
+                          updateCartItemQuantity(item.cartItemId, Math.max(1, parseInt(e.target.value) || 1));
                         }}
-                        disabled={!item}
-                        className="w-full py-1 px-1 text-center border border-slate-300 rounded text-xs font-mono font-semibold disabled:bg-slate-50"
+                        className="w-full py-1 px-1 text-center border border-slate-300 rounded text-xs font-mono font-semibold"
                       />
                     </td>
 
                     {/* Batch */}
                     <td className="py-1.5 px-2 text-center">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          value={item ? item.batch.batchNumber : ''}
-                          readOnly
-                          className="w-full py-1 pl-2 pr-6 text-center border border-slate-300 rounded text-xs font-mono"
-                        />
-                        <Search className="w-3.5 h-3.5 text-slate-400 absolute right-1.5 pointer-events-none" />
-                      </div>
+                      <input
+                        type="text"
+                        value={item.batch.batchNumber}
+                        readOnly
+                        className="w-full py-1 px-2 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-700"
+                      />
                     </td>
 
                     {/* MRP */}
                     <td className="py-1.5 px-2 text-right">
                       <input
                         type="text"
-                        value={item ? item.batch.mrpPerStrip.toFixed(2) : '0.00'}
+                        value={item.batch.mrpPerStrip.toFixed(2)}
                         readOnly
-                        className="w-full py-1 px-2 text-right border border-slate-300 rounded text-xs font-mono"
+                        className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-700"
                       />
                     </td>
 
                     {/* Sale Unit */}
                     <td className="py-1.5 px-2 text-center">
                       <select
-                        value={item ? item.unitType : 'STRIP'}
-                        onChange={(e) => {
-                          if (item) updateCartItemUnit(item.cartItemId, e.target.value as UnitType);
-                        }}
-                        disabled={!item}
-                        className="w-full py-1 px-1 border border-slate-300 rounded text-xs bg-white disabled:bg-slate-50"
+                        value={item.unitType}
+                        onChange={(e) => updateCartItemUnit(item.cartItemId, e.target.value as UnitType)}
+                        className="w-full py-1 px-1 border border-slate-300 rounded text-xs bg-white font-medium"
                       >
                         <option value="STRIP">STRIP</option>
                         <option value="TABLET">TABLET</option>
@@ -733,8 +949,8 @@ export const PosBillingView: React.FC = () => {
                       <input
                         type="text"
                         defaultValue="0.00"
-                        disabled={!item}
-                        className="w-full py-1 px-2 text-right border border-slate-300 rounded text-xs font-mono disabled:bg-slate-50"
+                        readOnly
+                        className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-500"
                       />
                     </td>
 
@@ -743,61 +959,322 @@ export const PosBillingView: React.FC = () => {
                       <input
                         type="text"
                         defaultValue="0.00"
-                        disabled={!item}
-                        className="w-full py-1 px-1 text-center border border-slate-300 rounded text-xs font-mono disabled:bg-slate-50"
+                        readOnly
+                        className="w-full py-1 px-1 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-500"
                       />
                     </td>
 
                     {/* Expiry Date */}
                     <td className="py-1.5 px-2 text-center">
-                      <div className="relative flex items-center">
-                        <input
-                          type="text"
-                          value={item ? item.batch.expiryDate : 'dd-mm-yyyy'}
-                          readOnly
-                          className="w-full py-1 pl-2 pr-6 text-center border border-slate-300 rounded text-xs font-mono text-slate-600"
-                        />
-                        <Calendar className="w-3.5 h-3.5 text-sky-600 absolute right-1.5 pointer-events-none" />
-                      </div>
+                      <input
+                        type="text"
+                        value={item.batch.expiryDate}
+                        readOnly
+                        className="w-full py-1 px-2 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-600"
+                      />
                     </td>
 
                     {/* Item Cost */}
                     <td className="py-1.5 px-2 text-right">
                       <input
                         type="text"
-                        value={item ? (item.unitPrice * item.quantity).toFixed(2) : '0.00'}
+                        value={(item.unitPrice * item.quantity).toFixed(2)}
                         readOnly
-                        className="w-full py-1 px-2 text-right border border-slate-300 rounded text-xs font-mono font-medium text-slate-800"
+                        className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono font-bold text-slate-900 bg-slate-50"
                       />
                     </td>
 
                     {/* Sub Location */}
                     <td className="py-1.5 px-2">
-                      <select disabled={!item} className="w-full py-1 px-1 border border-slate-300 rounded text-xs bg-white disabled:bg-slate-50">
-                        <option value="RACK-A1">RACK-A1</option>
-                        <option value="RACK-B2">RACK-B2</option>
-                        <option value="MAIN-SHELF">MAIN-SHELF</option>
-                      </select>
+                      <input
+                        type="text"
+                        value={item.product.rackLocation || 'MAIN-SHELF'}
+                        readOnly
+                        className="w-full py-1 px-1 text-center border border-slate-200 rounded text-xs bg-slate-50 text-slate-600"
+                      />
                     </td>
 
                     {/* Action Column */}
                     <td className="py-1.5 px-2 text-center">
-                      {item ? (
-                        <button
-                          type="button"
-                          onClick={() => removeCartItem(item.cartItemId)}
-                          className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded cursor-pointer transition-colors"
-                          title="Remove item"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 mx-auto" />
-                        </button>
-                      ) : (
-                        <span className="text-slate-300 text-[10px]">—</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeCartItem(item.cartItemId)}
+                        className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded cursor-pointer transition-colors"
+                        title="Remove item"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mx-auto" />
+                      </button>
                     </td>
                   </tr>
                 );
               })}
+
+              {/* 2. Interactive Input Row for Adding Products directly by Code / Name */}
+              <tr className="bg-sky-50/20 hover:bg-sky-50/40 transition-colors border-t-2 border-sky-200">
+                <td className="py-2 px-2 text-center font-bold text-sky-600">
+                  {cartItems.length + 1}
+                </td>
+
+                {/* Product Code Search Input with Autocomplete */}
+                <td className="py-2 px-2">
+                  <div className="relative flex items-center">
+                    <input
+                      ref={draftCodeInputRef}
+                      type="text"
+                      value={draftCode}
+                      onChange={(e) => {
+                        setDraftCode(e.target.value);
+                        setShowCodeDropdown(true);
+                        setShowNameDropdown(false);
+                      }}
+                      onFocus={() => {
+                        setShowCodeDropdown(true);
+                        setShowNameDropdown(false);
+                      }}
+                      placeholder="Type code / HSN..."
+                      className="w-full py-1 pl-2 pr-6 border border-sky-300 focus:border-sky-500 rounded text-xs bg-white font-mono text-slate-800 focus:outline-hidden shadow-2xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setIsLookupModalOpen(true)}
+                      title="Open Product Catalog (F2)"
+                      className="absolute right-1.5 text-slate-400 hover:text-sky-600 cursor-pointer"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Code dropdown suggestions */}
+                    {showCodeDropdown && codeMatches.length > 0 && (
+                      <div className="absolute top-full left-0 z-50 w-72 mt-1 bg-white border border-slate-200 rounded-md shadow-xl max-h-48 overflow-y-auto divide-y divide-slate-100">
+                        {codeMatches.map((p) => (
+                          <div
+                            key={p.id}
+                            onMouseDown={() => selectDraftProduct(p)}
+                            className="p-2 hover:bg-sky-50 cursor-pointer text-left"
+                          >
+                            <div className="font-bold text-xs text-slate-900">{p.name}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              Code/HSN: {p.hsnCode || p.barcode} | Rack: {p.rackLocation || 'MAIN'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </td>
+
+                {/* Product Name Search Input with Autocomplete */}
+                <td className="py-2 px-2">
+                  <div className="relative">
+                    <input
+                      ref={draftNameInputRef}
+                      type="text"
+                      value={draftName}
+                      onChange={(e) => {
+                        setDraftName(e.target.value);
+                        setShowNameDropdown(true);
+                        setShowCodeDropdown(false);
+                      }}
+                      onFocus={() => {
+                        setShowNameDropdown(true);
+                        setShowCodeDropdown(false);
+                      }}
+                      placeholder="Type medicine name or salt (e.g. Paracetamol)..."
+                      className="w-full py-1 px-2 border border-sky-300 focus:border-sky-500 rounded text-xs bg-white font-medium text-slate-800 focus:outline-hidden shadow-2xs"
+                    />
+
+                    {/* Name dropdown suggestions */}
+                    {showNameDropdown && nameMatches.length > 0 && (
+                      <div className="absolute top-full left-0 z-50 w-80 mt-1 bg-white border border-slate-200 rounded-md shadow-xl max-h-56 overflow-y-auto divide-y divide-slate-100">
+                        {nameMatches.map((p) => {
+                          const prodBatches = batches.filter((b) => b.productId === p.id && b.totalTablets > 0);
+                          const totalTabs = prodBatches.reduce((acc, b) => acc + b.totalTablets, 0);
+                          const dual = formatDualUnitStock(totalTabs, p.stripSize);
+
+                          return (
+                            <div
+                              key={p.id}
+                              onMouseDown={() => selectDraftProduct(p)}
+                              className="p-2 hover:bg-sky-50 cursor-pointer text-left"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-xs text-slate-900">{p.name}</span>
+                                <span
+                                  className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${
+                                    totalTabs > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                                  }`}
+                                >
+                                  {totalTabs > 0 ? dual.displayString : 'Out of Stock'}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                                {p.genericComposition}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </td>
+
+                {/* Quantity */}
+                <td className="py-2 px-2 text-center">
+                  <input
+                    ref={draftQtyInputRef}
+                    type="number"
+                    min={1}
+                    value={draftQty}
+                    onChange={(e) => setDraftQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddDraftToCart();
+                    }}
+                    disabled={!draftProduct}
+                    className="w-full py-1 px-1 text-center border border-slate-300 focus:border-sky-500 rounded text-xs font-mono font-bold disabled:bg-slate-50"
+                  />
+                </td>
+
+                {/* Batch Selector */}
+                <td className="py-2 px-2 text-center">
+                  {draftProduct ? (
+                    <select
+                      value={draftBatch?.id || ''}
+                      onChange={(e) => {
+                        const b = batches.find((item) => item.id === e.target.value);
+                        if (b) setDraftBatch(b);
+                      }}
+                      className="w-full py-1 px-1 border border-slate-300 rounded text-xs bg-white font-mono text-slate-800"
+                    >
+                      {batches
+                        .filter((b) => b.productId === draftProduct.id)
+                        .map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.batchNumber} (Exp: {b.expiryDate})
+                          </option>
+                        ))}
+                    </select>
+                  ) : (
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        placeholder="Auto batch"
+                        readOnly
+                        className="w-full py-1 pl-2 pr-6 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-400"
+                      />
+                      <Search
+                        onClick={() => setIsLookupModalOpen(true)}
+                        className="w-3.5 h-3.5 text-slate-400 hover:text-sky-600 absolute right-1.5 cursor-pointer"
+                      />
+                    </div>
+                  )}
+                </td>
+
+                {/* MRP */}
+                <td className="py-2 px-2 text-right">
+                  <input
+                    type="text"
+                    value={draftBatch ? draftBatch.mrpPerStrip.toFixed(2) : '0.00'}
+                    readOnly
+                    className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-700"
+                  />
+                </td>
+
+                {/* Sale Unit */}
+                <td className="py-2 px-2 text-center">
+                  <select
+                    value={draftUnit}
+                    onChange={(e) => setDraftUnit(e.target.value as UnitType)}
+                    disabled={!draftProduct}
+                    className="w-full py-1 px-1 border border-slate-300 rounded text-xs bg-white font-medium disabled:bg-slate-50"
+                  >
+                    <option value="STRIP">STRIP</option>
+                    <option value="TABLET">TABLET</option>
+                  </select>
+                </td>
+
+                {/* Discount Amount */}
+                <td className="py-2 px-2 text-right">
+                  <input
+                    type="text"
+                    defaultValue="0.00"
+                    readOnly
+                    className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-400"
+                  />
+                </td>
+
+                {/* Discount % */}
+                <td className="py-2 px-2 text-center">
+                  <input
+                    type="text"
+                    defaultValue="0.00"
+                    readOnly
+                    className="w-full py-1 px-1 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-400"
+                  />
+                </td>
+
+                {/* Expiry Date */}
+                <td className="py-2 px-2 text-center">
+                  <input
+                    type="text"
+                    value={draftBatch ? draftBatch.expiryDate : 'dd-mm-yyyy'}
+                    readOnly
+                    className="w-full py-1 px-2 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-600"
+                  />
+                </td>
+
+                {/* Item Cost */}
+                <td className="py-2 px-2 text-right">
+                  <input
+                    type="text"
+                    value={
+                      draftBatch && draftProduct
+                        ? (
+                            (draftUnit === 'STRIP'
+                              ? draftBatch.sellingPricePerStrip
+                              : draftBatch.sellingPricePerStrip / (draftProduct.stripSize || 10)) *
+                            draftQty
+                          ).toFixed(2)
+                        : '0.00'
+                    }
+                    readOnly
+                    className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono font-bold text-emerald-700 bg-slate-50"
+                  />
+                </td>
+
+                {/* Sub Location */}
+                <td className="py-2 px-2">
+                  <input
+                    type="text"
+                    value={draftProduct?.rackLocation || 'MAIN-SHELF'}
+                    readOnly
+                    className="w-full py-1 px-1 text-center border border-slate-200 rounded text-xs bg-slate-50 text-slate-600"
+                  />
+                </td>
+
+                {/* Action Column */}
+                <td className="py-2 px-2 text-center">
+                  {draftProduct && draftBatch ? (
+                    <button
+                      type="button"
+                      onClick={handleAddDraftToCart}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs flex items-center justify-center gap-1 cursor-pointer shadow-xs transition-colors"
+                      title="Add to Bill (Enter)"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsLookupModalOpen(true)}
+                      className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded cursor-pointer transition-colors"
+                      title="Open Product Catalog (F2)"
+                    >
+                      <Search className="w-3.5 h-3.5 mx-auto" />
+                    </button>
+                  )}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -1266,6 +1743,159 @@ export const PosBillingView: React.FC = () => {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Product Lookup & Batch Selection Modal (F2) */}
+      {isLookupModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in duration-200">
+            {/* Modal Header */}
+            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Package className="w-5 h-5 text-sky-400" />
+                <div>
+                  <h3 className="font-bold text-sm">Product Catalog & Batch Browser (F2)</h3>
+                  <p className="text-[11px] text-slate-300">
+                    Search pharmacy inventory by medicine name, salt, barcode or HSN to add directly to current bill.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLookupModalOpen(false);
+                  setLookupSearchQuery('');
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Search Bar */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={lookupSearchQuery}
+                  onChange={(e) => setLookupSearchQuery(e.target.value)}
+                  placeholder="Search products by brand name, salt, barcode, or HSN code..."
+                  className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-md text-xs bg-white focus:outline-hidden focus:border-sky-500 shadow-2xs"
+                />
+              </div>
+            </div>
+
+            {/* Modal Inventory Table */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {products.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">
+                  No products registered in the database yet. Add medicines via Medicine Master or inward a purchase.
+                </div>
+              ) : (
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200 text-[11px]">
+                      <th className="py-2 px-3">Medicine Name</th>
+                      <th className="py-2 px-3">Generic Salt</th>
+                      <th className="py-2 px-2 text-center">Schedule</th>
+                      <th className="py-2 px-2 text-center">Rack</th>
+                      <th className="py-2 px-3 text-right">Stock</th>
+                      <th className="py-2 px-3 text-right">MRP</th>
+                      <th className="py-2 px-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {products
+                      .filter((p) => {
+                        if (!lookupSearchQuery.trim()) return true;
+                        const q = lookupSearchQuery.toLowerCase();
+                        return (
+                          p.name.toLowerCase().includes(q) ||
+                          p.genericComposition.toLowerCase().includes(q) ||
+                          p.barcode.includes(q) ||
+                          p.hsnCode.includes(q)
+                        );
+                      })
+                      .map((p) => {
+                        const prodBatches = batches.filter((b) => b.productId === p.id && b.totalTablets > 0);
+                        const totalTabs = prodBatches.reduce((acc, b) => acc + b.totalTablets, 0);
+                        const stock = formatDualUnitStock(totalTabs, p.stripSize);
+                        const earliestBatch = prodBatches.sort(
+                          (a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()
+                        )[0];
+
+                        return (
+                          <tr key={p.id} className="hover:bg-sky-50/50 transition-colors">
+                            <td className="py-2.5 px-3">
+                              <div className="font-bold text-slate-900">{p.name}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                HSN: {p.hsnCode || '—'} | Barcode: {p.barcode || '—'}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-600">{p.genericComposition}</td>
+                            <td className="py-2.5 px-2 text-center">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                                {p.drugSchedule}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2 text-center font-mono text-slate-500">
+                              {p.rackLocation || 'MAIN'}
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <span
+                                className={`font-semibold ${
+                                  totalTabs > 0 ? 'text-emerald-700' : 'text-rose-600'
+                                }`}
+                              >
+                                {totalTabs > 0 ? stock.displayString : 'Out of Stock'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                              ₹ {earliestBatch ? earliestBatch.mrpPerStrip.toFixed(2) : '0.00'}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <button
+                                type="button"
+                                disabled={totalTabs <= 0 || !earliestBatch}
+                                onClick={() => {
+                                  if (earliestBatch) {
+                                    addItemToCart(p, earliestBatch, 'STRIP', 1);
+                                    setIsLookupModalOpen(false);
+                                    setLookupSearchQuery('');
+                                  }
+                                }}
+                                className="px-2.5 py-1 bg-[#0084ff] hover:bg-blue-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded text-xs cursor-pointer shadow-2xs"
+                              >
+                                Select & Add
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+              <span className="text-slate-500 text-[11px]">
+                Tip: Press <kbd className="px-1 py-0.5 bg-white border border-slate-300 rounded font-mono">F2</kbd> or <kbd className="px-1 py-0.5 bg-white border border-slate-300 rounded font-mono">/</kbd> anytime on the billing screen to search.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLookupModalOpen(false);
+                  setLookupSearchQuery('');
+                }}
+                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

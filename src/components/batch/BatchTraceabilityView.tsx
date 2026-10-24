@@ -172,7 +172,7 @@ export const BatchTraceabilityView: React.FC<BatchTraceabilityViewProps> = ({
         const q = searchQuery.toLowerCase();
         const mProd = item.product?.name.toLowerCase().includes(q);
         const mBatch = item.batch.batchNumber.toLowerCase().includes(q);
-        const mVendor = item.vendor?.name.toLowerCase().includes(q);
+        const mVendor = (item.vendor?.companyName || item.vendor?.name || '').toLowerCase().includes(q);
         if (!mProd && !mBatch && !mVendor) return false;
       }
       return true;
@@ -202,7 +202,7 @@ export const BatchTraceabilityView: React.FC<BatchTraceabilityViewProps> = ({
         batchNumber: item.batch.batchNumber,
         qtyStrips: item.stock.strips + 25,
         type: 'INWARD',
-        party: item.vendor?.name || 'Wholesaler',
+        party: item.vendor?.companyName || item.vendor?.name || 'Wholesaler',
       });
     });
 
@@ -213,11 +213,11 @@ export const BatchTraceabilityView: React.FC<BatchTraceabilityViewProps> = ({
           date: inv.invoiceDate.split('T')[0],
           docType: 'POS_SALE',
           docNo: inv.invoiceNumber,
-          productName: it.productName,
-          batchNumber: it.batchNumber || 'NW26-88',
-          qtyStrips: Math.ceil(it.tabletsSold / 10),
+          productName: it.product?.name || 'Medicine',
+          batchNumber: it.batch?.batchNumber || 'NW26-88',
+          qtyStrips: Math.ceil((it.totalTabletsSold || 10) / (it.product?.stripSize || 10)),
           type: 'OUTWARD',
-          party: inv.customerName || 'Retail Walk-in Customer',
+          party: inv.prescription?.patientName || inv.customerName || 'Retail Walk-in Customer',
         });
       });
     });
@@ -289,7 +289,7 @@ export const BatchTraceabilityView: React.FC<BatchTraceabilityViewProps> = ({
       b.batch.batchNumber,
       b.batch.manufacturingDate,
       b.batch.expiryDate,
-      `"${b.vendor.name}"`,
+      `"${b.vendor?.companyName || b.vendor?.name || ''}"`,
       b.stock.strips,
       b.qcStatus,
       b.isQuarantined ? 'YES' : 'NO',
@@ -700,7 +700,7 @@ export const BatchTraceabilityView: React.FC<BatchTraceabilityViewProps> = ({
                     <td className="py-2.5 px-3 font-mono font-semibold text-[#0084ff]">{item.batch.batchNumber}</td>
                     <td className="py-2.5 px-3 text-slate-600">{item.batch.manufacturingDate}</td>
                     <td className="py-2.5 px-3 text-slate-600 font-mono">{item.batch.expiryDate}</td>
-                    <td className="py-2.5 px-3 font-medium text-slate-800">{item.vendor.name}</td>
+                    <td className="py-2.5 px-3 font-medium text-slate-800">{item.vendor?.companyName || item.vendor?.name}</td>
                     <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600">
                       <div>{item.invoiceRef}</div>
                       <div className="text-[10px] text-slate-400">{item.invoiceDate}</div>

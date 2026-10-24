@@ -9,6 +9,7 @@ import {
   DpdpLogEntry,
   AnalyticsSummary,
   UserRole,
+  PaymentMethod,
   StockAuditLogEntry,
   StockAdjustmentType,
   AutomatedBackupConfig,
@@ -27,6 +28,7 @@ import {
   WantedBookItem,
   InwardPurchaseInvoice,
   SalesReturnRecord,
+  SalesReturnItem,
 } from '../types/shopaid';
 import {
   DEFAULT_USER_PROFILE,
@@ -125,15 +127,42 @@ interface PharmacyContextType {
   }) => { success: boolean; error?: string };
   analytics: AnalyticsSummary;
   findProductByBarcode: (barcode: string) => { product?: Product; activeBatch?: Batch } | null;
+  clearAllData: () => void;
+  loadDemoSampleData: () => void;
 }
 
 const PharmacyContext = createContext<PharmacyContextType | null>(null);
+
+const isTestEnvironment = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
 
 const STORAGE_KEYS = {
   PRINTER: 'jeeva_pharmacy_printer_v1',
   BATCHES: 'jeeva_pharmacy_batches_v1',
   INVOICES: 'jeeva_pharmacy_invoices_v1',
   PRODUCTS: 'jeeva_pharmacy_products_v1',
+  VENDORS: 'jeeva_pharmacy_vendors_v1',
+  DOCTORS: 'jeeva_pharmacy_doctors_v1',
+  CUSTOMERS: 'jeeva_pharmacy_customers_v1',
+  SALES_REPS: 'jeeva_pharmacy_sales_reps_v1',
+  RACKS: 'jeeva_pharmacy_racks_v1',
+  MANUFACTURERS: 'jeeva_pharmacy_manufacturers_v1',
+  WANTED_BOOK: 'jeeva_pharmacy_wanted_book_v1',
+  PURCHASES: 'jeeva_pharmacy_purchases_v1',
+  SALES_RETURNS: 'jeeva_pharmacy_sales_returns_v1',
+  DPDP_LOGS: 'jeeva_pharmacy_dpdp_logs_v1',
+  AUDIT_LOGS: 'jeeva_pharmacy_audit_logs_v1',
+  BACKUP_CONFIG: 'jeeva_pharmacy_backup_config_v1',
+  BACKUP_SNAPSHOTS: 'jeeva_pharmacy_backup_snapshots_v1',
+};
+
+const getStoredOrFallback = <T,>(key: string, testFallback: T, liveFallback: T): T => {
+  if (isTestEnvironment) return testFallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : liveFallback;
+  } catch {
+    return liveFallback;
+  }
 };
 
 export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -150,42 +179,66 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  const [products, setProducts] = useState<Product[]>(SEED_PRODUCTS);
-  const [batches, setBatches] = useState<Batch[]>(SEED_BATCHES);
-  const [invoices, setInvoices] = useState<Invoice[]>(SEED_INVOICES);
-  const [vendors, setVendors] = useState<Vendor[]>(SEED_VENDORS);
-  const [dpdpLogs, setDpdpLogs] = useState<DpdpLogEntry[]>(SEED_DPDP_LOGS);
-  const [stockAuditLogs, setStockAuditLogs] = useState<StockAuditLogEntry[]>(SEED_STOCK_AUDIT_LOGS);
+  // Master Data Collections (Empty clean slate for runtime, seeded for Vitest test suites)
+  const [products, setProducts] = useState<Product[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.PRODUCTS, SEED_PRODUCTS, [])
+  );
+  const [batches, setBatches] = useState<Batch[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.BATCHES, SEED_BATCHES, [])
+  );
+  const [invoices, setInvoices] = useState<Invoice[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.INVOICES, SEED_INVOICES, [])
+  );
+  const [vendors, setVendors] = useState<Vendor[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.VENDORS, SEED_VENDORS, [])
+  );
+  const [dpdpLogs, setDpdpLogs] = useState<DpdpLogEntry[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.DPDP_LOGS, SEED_DPDP_LOGS, [])
+  );
+  const [stockAuditLogs, setStockAuditLogs] = useState<StockAuditLogEntry[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.AUDIT_LOGS, SEED_STOCK_AUDIT_LOGS, [])
+  );
 
   // ShopAID Core Master & Operations State
-  const [doctors, setDoctors] = useState<MasterDoctor[]>(SEED_DOCTORS);
-  const [customers, setCustomers] = useState<MasterCustomer[]>(SEED_CUSTOMERS);
-  const [salesReps, setSalesReps] = useState<MasterSalesRep[]>(SEED_SALES_REPS);
-  const [racks, setRacks] = useState<MasterRack[]>(SEED_RACKS);
-  const [manufacturers, setManufacturers] = useState<MasterManufacturer[]>(SEED_MANUFACTURERS);
+  const [doctors, setDoctors] = useState<MasterDoctor[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.DOCTORS, SEED_DOCTORS, [])
+  );
+  const [customers, setCustomers] = useState<MasterCustomer[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.CUSTOMERS, SEED_CUSTOMERS, [])
+  );
+  const [salesReps, setSalesReps] = useState<MasterSalesRep[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.SALES_REPS, SEED_SALES_REPS, [])
+  );
+  const [racks, setRacks] = useState<MasterRack[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.RACKS, SEED_RACKS, [])
+  );
+  const [manufacturers, setManufacturers] = useState<MasterManufacturer[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.MANUFACTURERS, SEED_MANUFACTURERS, [])
+  );
   const [scheduleTypes] = useState<MasterScheduleType[]>(SEED_SCHEDULE_TYPES);
-  const [wantedBook, setWantedBook] = useState<WantedBookItem[]>(SEED_WANTED_BOOK);
-  const [purchaseInvoices, setPurchaseInvoices] = useState<InwardPurchaseInvoice[]>(SEED_PURCHASE_INVOICES);
-  const [salesReturns, setSalesReturns] = useState<SalesReturnRecord[]>(SEED_SALES_RETURNS);
+  const [wantedBook, setWantedBook] = useState<WantedBookItem[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.WANTED_BOOK, SEED_WANTED_BOOK, [])
+  );
+  const [purchaseInvoices, setPurchaseInvoices] = useState<InwardPurchaseInvoice[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.PURCHASES, SEED_PURCHASE_INVOICES, [])
+  );
+  const [salesReturns, setSalesReturns] = useState<SalesReturnRecord[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.SALES_RETURNS, SEED_SALES_RETURNS, [])
+  );
 
   // Automated Database Backup & Archival State
   const [backupConfig, setBackupConfig] = useState<AutomatedBackupConfig>(() => {
     try {
-      const stored = localStorage.getItem('jeeva_pharmacy_backup_config_v1');
+      const stored = localStorage.getItem(STORAGE_KEYS.BACKUP_CONFIG);
       return stored ? JSON.parse(stored) : DEFAULT_BACKUP_CONFIG;
     } catch {
       return DEFAULT_BACKUP_CONFIG;
     }
   });
 
-  const [backupSnapshots, setBackupSnapshots] = useState<BackupSnapshot[]>(() => {
-    try {
-      const stored = localStorage.getItem('jeeva_pharmacy_backup_snapshots_v1');
-      return stored ? JSON.parse(stored) : SEED_BACKUP_SNAPSHOTS;
-    } catch {
-      return SEED_BACKUP_SNAPSHOTS;
-    }
-  });
+  const [backupSnapshots, setBackupSnapshots] = useState<BackupSnapshot[]>(() =>
+    getStoredOrFallback(STORAGE_KEYS.BACKUP_SNAPSHOTS, SEED_BACKUP_SNAPSHOTS, [])
+  );
 
   // Load persistent SQLite data from Electron backend if available
   useEffect(() => {
@@ -230,6 +283,103 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('LocalStorage unavailable for backup snapshots', e);
     }
   }, [backupSnapshots]);
+
+  // Sync state collections to localStorage for persistence across reloads
+  useEffect(() => {
+    if (!isTestEnvironment) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+        localStorage.setItem(STORAGE_KEYS.BATCHES, JSON.stringify(batches));
+        localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(invoices));
+        localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(vendors));
+        localStorage.setItem(STORAGE_KEYS.DOCTORS, JSON.stringify(doctors));
+        localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+        localStorage.setItem(STORAGE_KEYS.SALES_REPS, JSON.stringify(salesReps));
+        localStorage.setItem(STORAGE_KEYS.RACKS, JSON.stringify(racks));
+        localStorage.setItem(STORAGE_KEYS.MANUFACTURERS, JSON.stringify(manufacturers));
+        localStorage.setItem(STORAGE_KEYS.WANTED_BOOK, JSON.stringify(wantedBook));
+        localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(purchaseInvoices));
+        localStorage.setItem(STORAGE_KEYS.SALES_RETURNS, JSON.stringify(salesReturns));
+        localStorage.setItem(STORAGE_KEYS.DPDP_LOGS, JSON.stringify(dpdpLogs));
+        localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(stockAuditLogs));
+      } catch (e) {
+        console.warn('LocalStorage save failed:', e);
+      }
+    }
+  }, [
+    products,
+    batches,
+    invoices,
+    vendors,
+    doctors,
+    customers,
+    salesReps,
+    racks,
+    manufacturers,
+    wantedBook,
+    purchaseInvoices,
+    salesReturns,
+    dpdpLogs,
+    stockAuditLogs,
+  ]);
+
+  // Clean Slate Utility: Clears all master and transactional data
+  const clearAllData = () => {
+    setProducts([]);
+    setBatches([]);
+    setInvoices([]);
+    setVendors([]);
+    setDoctors([]);
+    setCustomers([]);
+    setSalesReps([]);
+    setRacks([]);
+    setManufacturers([]);
+    setWantedBook([]);
+    setPurchaseInvoices([]);
+    setSalesReturns([]);
+    setDpdpLogs([]);
+    setStockAuditLogs([]);
+    setBackupSnapshots([]);
+
+    try {
+      localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
+      localStorage.removeItem(STORAGE_KEYS.BATCHES);
+      localStorage.removeItem(STORAGE_KEYS.INVOICES);
+      localStorage.removeItem(STORAGE_KEYS.VENDORS);
+      localStorage.removeItem(STORAGE_KEYS.DOCTORS);
+      localStorage.removeItem(STORAGE_KEYS.CUSTOMERS);
+      localStorage.removeItem(STORAGE_KEYS.SALES_REPS);
+      localStorage.removeItem(STORAGE_KEYS.RACKS);
+      localStorage.removeItem(STORAGE_KEYS.MANUFACTURERS);
+      localStorage.removeItem(STORAGE_KEYS.WANTED_BOOK);
+      localStorage.removeItem(STORAGE_KEYS.PURCHASES);
+      localStorage.removeItem(STORAGE_KEYS.SALES_RETURNS);
+      localStorage.removeItem(STORAGE_KEYS.DPDP_LOGS);
+      localStorage.removeItem(STORAGE_KEYS.AUDIT_LOGS);
+      localStorage.removeItem(STORAGE_KEYS.BACKUP_SNAPSHOTS);
+    } catch (e) {
+      console.warn('LocalStorage clear failed:', e);
+    }
+  };
+
+  // Demo Data Loader: Populates catalog with sample data on demand
+  const loadDemoSampleData = () => {
+    setProducts(SEED_PRODUCTS);
+    setBatches(SEED_BATCHES);
+    setInvoices(SEED_INVOICES);
+    setVendors(SEED_VENDORS);
+    setDoctors(SEED_DOCTORS);
+    setCustomers(SEED_CUSTOMERS);
+    setSalesReps(SEED_SALES_REPS);
+    setRacks(SEED_RACKS);
+    setManufacturers(SEED_MANUFACTURERS);
+    setWantedBook(SEED_WANTED_BOOK);
+    setPurchaseInvoices(SEED_PURCHASE_INVOICES);
+    setSalesReturns(SEED_SALES_RETURNS);
+    setDpdpLogs(SEED_DPDP_LOGS);
+    setStockAuditLogs(SEED_STOCK_AUDIT_LOGS);
+    setBackupSnapshots(SEED_BACKUP_SNAPSHOTS);
+  };
 
   const updateBackupConfig = (newCfg: Partial<AutomatedBackupConfig>) => {
     setBackupConfig((prev) => ({ ...prev, ...newCfg }));
@@ -1471,6 +1621,8 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         recordVendorReturn,
         analytics,
         findProductByBarcode,
+        clearAllData,
+        loadDemoSampleData,
       }}
     >
       {children}

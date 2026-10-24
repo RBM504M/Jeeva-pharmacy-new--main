@@ -99,7 +99,7 @@ export const ReportsSuiteView: React.FC<ReportsSuiteViewProps> = ({ initialTab =
         // Find last sale
         let lastSaleDate: string | null = null;
         invoices.forEach((inv) => {
-          const hasItem = inv.items.some((it) => it.product?.id === prod.id || it.productId === prod.id);
+          const hasItem = inv.items.some((it) => it.product?.id === prod.id);
           if (hasItem) {
             const d = inv.invoiceDate.split('T')[0];
             if (!lastSaleDate || d > lastSaleDate) lastSaleDate = d;
@@ -134,7 +134,7 @@ export const ReportsSuiteView: React.FC<ReportsSuiteViewProps> = ({ initialTab =
         patientName: inv.prescription.patientName,
         doctor: inv.prescription.doctorName || 'Dr. Suresh, MBBS',
         items: inv.items,
-        total: inv.totalAmount,
+        total: inv.grandTotal,
       }))
       .filter((item) => {
         if (rxDoctorFilter !== 'ALL' && item.doctor !== rxDoctorFilter) return false;
@@ -747,9 +747,9 @@ export const ReportsSuiteView: React.FC<ReportsSuiteViewProps> = ({ initialTab =
                   const rows = invoices.map((inv) => [
                     inv.invoiceNumber,
                     inv.invoiceDate,
-                    `"${inv.customerName || 'Walk-in'}"`,
+                    `"${inv.prescription?.patientName || inv.customerName || 'Walk-in'}"`,
                     inv.subtotal.toFixed(2),
-                    inv.taxTotal.toFixed(2),
+                    inv.totalTax.toFixed(2),
                     inv.grandTotal.toFixed(2),
                     inv.status,
                   ]);
@@ -796,10 +796,10 @@ export const ReportsSuiteView: React.FC<ReportsSuiteViewProps> = ({ initialTab =
                   <tr key={inv.id} className="hover:bg-slate-50">
                     <td className="py-2 px-3 font-mono font-bold text-[#0084ff]">{inv.invoiceNumber}</td>
                     <td className="py-2 px-3 text-slate-600">{inv.invoiceDate.split('T')[0]}</td>
-                    <td className="py-2 px-3 font-medium text-slate-900">{inv.customerName || 'Walk-in Retail Patient'}</td>
+                    <td className="py-2 px-3 font-medium text-slate-900">{inv.prescription?.patientName || inv.customerName || 'Walk-in Retail Patient'}</td>
                     <td className="py-2 px-3 text-center font-mono">{inv.items.length}</td>
                     <td className="py-2 px-3 text-right font-mono">{formatINR(inv.subtotal)}</td>
-                    <td className="py-2 px-3 text-right font-mono text-slate-600">{formatINR(inv.taxTotal)}</td>
+                    <td className="py-2 px-3 text-right font-mono text-slate-600">{formatINR(inv.totalTax)}</td>
                     <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">{formatINR(inv.grandTotal)}</td>
                     <td className="py-2 px-3 text-center">
                       <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">

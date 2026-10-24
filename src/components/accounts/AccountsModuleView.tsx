@@ -86,67 +86,9 @@ export const AccountsModuleView: React.FC<AccountsModuleViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Sample Expenses
-  const [expenses, setExpenses] = useState<ExpenseRecord[]>([
-    {
-      id: 'exp-01',
-      date: '2026-10-21',
-      category: 'Electricity & Power',
-      payee: 'TANGEDCO Electricity Board',
-      amount: 4250.0,
-      paymentMode: 'BANK_TRANSFER',
-      referenceNo: 'TXN-998124',
-      notes: 'Monthly pharmacy power bill',
-    },
-    {
-      id: 'exp-02',
-      date: '2026-10-20',
-      category: 'Store Maintenance & Cleanliness',
-      payee: 'CleanCare Services',
-      amount: 850.0,
-      paymentMode: 'CASH',
-      referenceNo: 'VCH-084',
-      notes: 'Weekly floor sanitization and pest control',
-    },
-    {
-      id: 'exp-03',
-      date: '2026-10-18',
-      category: 'Printing & Stationery',
-      payee: 'City Stationers',
-      amount: 1400.0,
-      paymentMode: 'UPI',
-      referenceNo: 'UPI-332901',
-      notes: 'Thermal receipt paper rolls (50 rolls)',
-    },
-  ]);
-
-  // Sample Credit / Debit Notes
-  const [notes, setNotes] = useState<CreditDebitNote[]>([
-    {
-      id: 'note-01',
-      noteNumber: 'CN-2026-012',
-      type: 'CREDIT_NOTE',
-      date: '2026-10-19',
-      partyName: 'R. Krishnan',
-      partyType: 'CUSTOMER',
-      originalBillNo: 'INV-2026-042',
-      amount: 450.0,
-      reason: 'Doctor changed prescription - returned unconsumed strips',
-      status: 'ADJUSTED',
-    },
-    {
-      id: 'note-02',
-      noteNumber: 'DN-2026-008',
-      type: 'DEBIT_NOTE',
-      date: '2026-10-17',
-      partyName: 'Apollo Medical Supplies Ltd',
-      partyType: 'SUPPLIER',
-      originalBillNo: 'APL-99824',
-      amount: 1240.0,
-      reason: 'Damaged strips rejected during GRN inspection',
-      status: 'UNADJUSTED',
-    },
-  ]);
+  // Real Expenses & Notes
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+  const [notes, setNotes] = useState<CreditDebitNote[]>([]);
 
   // Modals
   const [showExpenseModal, setShowExpenseModal] = useState<boolean>(false);
@@ -173,7 +115,7 @@ export const AccountsModuleView: React.FC<AccountsModuleViewProps> = ({
   const metrics = useMemo(() => {
     const todaySales = invoices.reduce((sum, inv) => sum + inv.grandTotal, 0);
     const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const supplierOutstanding = vendors.reduce((sum, v) => sum + (v.currentBalance || 15000), 0);
+    const supplierOutstanding = vendors.reduce((sum, v) => sum + (v.balanceDue || v.currentBalance || 15000), 0);
     const customerOutstanding = customers.reduce((sum, c) => sum + (c.currentBalance || 1200), 0);
 
     return { todaySales, totalExpenses, supplierOutstanding, customerOutstanding };
@@ -613,18 +555,18 @@ export const AccountsModuleView: React.FC<AccountsModuleViewProps> = ({
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {vendors.map((v) => (
                 <tr key={v.id} className="hover:bg-slate-50">
-                  <td className="py-2.5 px-3 font-bold text-slate-900">{v.name}</td>
+                  <td className="py-2.5 px-3 font-bold text-slate-900">{v.companyName || v.name}</td>
                   <td className="py-2.5 px-3 font-mono text-[11px]">{v.gstin}</td>
-                  <td className="py-2.5 px-3">{v.city}</td>
+                  <td className="py-2.5 px-3">{v.city || v.state}</td>
                   <td className="py-2.5 px-3 font-mono">{v.phone}</td>
                   <td className="py-2.5 px-3 text-center font-mono">30 Days</td>
                   <td className="py-2.5 px-3 text-right font-mono font-bold text-rose-600">
-                    {formatINR(v.currentBalance || 18450)}
+                    {formatINR(v.balanceDue || v.currentBalance || 18450)}
                   </td>
                   <td className="py-2.5 px-3 text-center">
                     <button
                       type="button"
-                      onClick={() => showToast(`Payment voucher generated for ${v.name}`)}
+                      onClick={() => showToast(`Payment voucher generated for ${v.companyName || v.name}`)}
                       className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-medium cursor-pointer"
                     >
                       Make Payment
@@ -714,7 +656,7 @@ export const AccountsModuleView: React.FC<AccountsModuleViewProps> = ({
                   <td className="py-2.5 px-3 text-slate-600">{inv.invoiceDate.split('T')[0]}</td>
                   <td className="py-2.5 px-3 font-mono font-semibold text-[#0084ff]">{inv.invoiceNumber}</td>
                   <td className="py-2.5 px-3 font-medium text-slate-900">
-                    Retail Sale ({inv.paymentMethod}) - {inv.customerName || 'Walk-in'}
+                    Retail Sale ({inv.paymentMethod}) - {inv.prescription?.patientName || inv.customerName || 'Walk-in'}
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-600">
                     {formatINR(inv.grandTotal)}

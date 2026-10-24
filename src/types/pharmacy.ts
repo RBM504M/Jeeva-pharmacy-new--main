@@ -123,14 +123,17 @@ export interface Invoice {
   invoiceDate: string;
   isInterState: boolean;
   prescription: PrescriptionDetails;
+  customerName?: string;
   items: PosCartItem[];
   subtotal: number;
   totalCgst: number;
   totalSgst: number;
   totalIgst: number;
   totalTax: number;
+  taxTotal?: number;
   roundOff: number;
   grandTotal: number;
+  totalAmount?: number;
   paymentMethod: PaymentMethod;
   status: 'COMPLETED' | 'CANCELLED' | 'RETURNED';
   cashierName: string;
@@ -141,14 +144,17 @@ export interface Invoice {
 export interface Vendor {
   id: string;
   companyName: string;
+  name?: string;
   contactPerson: string;
   phone: string;
   email: string;
   gstin: string;
   drugLicenseNumber: string;
   state: string;
+  city?: string;
   creditPeriodDays: number;
   balanceDue: number;
+  currentBalance?: number;
   isActive: boolean;
 }
 

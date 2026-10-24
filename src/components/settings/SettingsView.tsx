@@ -46,7 +46,7 @@ export interface SettingsViewProps {
 export const SettingsView: React.FC<SettingsViewProps> = ({
   initialTab = 'STORE_PROFILE',
 }) => {
-  const { printerSettings, updatePrinterSettings, currentUser, switchUserRole } = usePharmacy();
+  const { printerSettings, updatePrinterSettings, currentUser, switchUserRole, clearAllData, loadDemoSampleData } = usePharmacy();
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -420,14 +420,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div>
               <label className="font-semibold text-slate-700 block mb-1">Receipt Format Style</label>
               <select
-                value={printerSettings.format}
-                onChange={(e) => updatePrinterSettings({ format: e.target.value as any })}
+                value={printerSettings.preferredFormat}
+                onChange={(e) => updatePrinterSettings({ preferredFormat: e.target.value as any })}
                 className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs"
               >
-                <option value="THERMAL_3_INCH">3-Inch Thermal Receipt (80mm ESC/POS)</option>
-                <option value="THERMAL_2_INCH">2-Inch Thermal Slip (58mm ESC/POS)</option>
-                <option value="A4_LASER">A4 Laser Invoice (Standard Tax Invoice)</option>
-                <option value="A5_LANDSCAPE">A5 Half-Sheet Invoice</option>
+                <option value="THERMAL_80MM">3-Inch Thermal Receipt (80mm ESC/POS)</option>
+                <option value="LASER_A4">A4 Laser Invoice (Standard Tax Invoice)</option>
               </select>
             </div>
             <div>
@@ -525,6 +523,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               >
                 Sync Wholesaler Rates
               </button>
+            </div>
+
+            {/* Clean Slate & Reset Data */}
+            <div className="p-4 border border-rose-200 rounded-lg bg-rose-50/50 space-y-2 md:col-span-2">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <span className="font-bold text-rose-900 block">Database Clean Slate & Sample Data Purge</span>
+                  <p className="text-rose-700 text-[11px] mt-0.5">
+                    Remove all demo medicines, mock batches, dummy invoices and seed records to start with a fresh pharmacy database.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Are you sure you want to remove ALL sample/mock data? This action will reset your database to a clean empty state.')) {
+                        clearAllData();
+                        showToast('✓ All sample data removed. Clean database initialized.');
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer shadow-xs"
+                  >
+                    Clear All Sample Data
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      loadDemoSampleData();
+                      showToast('✓ Sample demonstration catalog and batches loaded.');
+                    }}
+                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded text-xs font-semibold cursor-pointer"
+                  >
+                    Reload Demo Data
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

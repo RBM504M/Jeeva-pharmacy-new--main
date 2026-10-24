@@ -612,12 +612,12 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {manufacturers.map((mfg, idx) => (
-                <tr key={idx} className="hover:bg-slate-50">
-                  <td className="p-3 font-bold text-slate-900">{mfg}</td>
-                  <td className="p-3 text-slate-600">Baddi / Sikkim / Chennai SEZ</td>
+                <tr key={mfg.id || idx} className="hover:bg-slate-50">
+                  <td className="p-3 font-bold text-slate-900">{mfg.name}</td>
+                  <td className="p-3 text-slate-600">{mfg.city || 'Baddi / Sikkim / Chennai SEZ'}</td>
                   <td className="p-3 font-mono text-[11px] text-emerald-700 font-semibold">WHO-GMP & US-FDA Compliant</td>
                   <td className="p-3 text-center font-mono font-bold text-slate-800">
-                    {products.filter((p) => p.manufacturer === mfg).length} Products
+                    {products.filter((p) => p.manufacturer === mfg.name).length} Products
                   </td>
                 </tr>
               ))}

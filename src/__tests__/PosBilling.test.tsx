@@ -97,4 +97,54 @@ describe('POS Billing Engine & Hardware Integration Component', () => {
       expect(screen.getByText(/Total Payable/i)).toBeInTheDocument();
     });
   });
+
+  test('allows searching and adding a product to POS by searching Product Name in inline draft row', async () => {
+    renderPosWithProvider();
+
+    // Find the inline product name input
+    const nameInput = screen.getByPlaceholderText(/Type medicine name or salt/i);
+    expect(nameInput).toBeInTheDocument();
+
+    // Type medicine query
+    fireEvent.change(nameInput, { target: { value: 'Paracetamol' } });
+
+    // Suggestion dropdown should appear
+    await waitFor(() => {
+      const matchItems = screen.getAllByText(/Paracetamol Tablets IP 650mg/i);
+      expect(matchItems.length).toBeGreaterThan(0);
+      fireEvent.mouseDown(matchItems[0]);
+    });
+
+    // Verify Add button is active and click Add
+    const addBtn = screen.getByTitle(/Add to Bill/i);
+    expect(addBtn).toBeInTheDocument();
+    fireEvent.click(addBtn);
+
+    // Verify product is now in the cart
+    await waitFor(() => {
+      expect(screen.getAllByText(/Paracetamol Tablets IP 650mg/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  test('opens Product Catalog modal via F2 or Catalog button and selects a medicine', async () => {
+    renderPosWithProvider();
+
+    // Click Catalog button
+    const catalogBtns = screen.getAllByRole('button', { name: /Catalog/i });
+    expect(catalogBtns.length).toBeGreaterThan(0);
+    fireEvent.click(catalogBtns[0]);
+
+    // Modal should be visible
+    expect(screen.getByText(/Product Catalog & Batch Browser/i)).toBeInTheDocument();
+
+    // Select and add first available item
+    const selectAddBtns = screen.getAllByRole('button', { name: /Select & Add/i });
+    expect(selectAddBtns.length).toBeGreaterThan(0);
+    fireEvent.click(selectAddBtns[0]);
+
+    // Modal closes and item is in cart
+    await waitFor(() => {
+      expect(screen.queryByText(/Product Catalog & Batch Browser/i)).not.toBeInTheDocument();
+    });
+  });
 });
