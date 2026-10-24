@@ -88,6 +88,8 @@ interface PharmacyContextType {
   switchUserRole: (role: UserRole) => void;
   addProduct: (product: Product) => void;
   updateProduct: (product: Product) => void;
+  addVendor: (vendor: Vendor) => void;
+  updateVendor: (vendor: Vendor) => void;
   addBatch: (batch: Batch) => void;
   inwardStockBatch: (batchData: Omit<Batch, 'id'>, vendorInvoiceNo?: string) => void;
   createInvoice: (invoice: Invoice) => { success: boolean; error?: string };
@@ -1417,6 +1419,30 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setRacks((prev) => [rack, ...prev]);
   };
 
+  const addVendor = (vendor: Vendor) => {
+    setVendors((prev) => {
+      const updated = [vendor, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save vendor to localStorage', err);
+      }
+      return updated;
+    });
+  };
+
+  const updateVendor = (vendor: Vendor) => {
+    setVendors((prev) => {
+      const updated = prev.map((v) => (v.id === vendor.id ? vendor : v));
+      try {
+        localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to update vendor in localStorage', err);
+      }
+      return updated;
+    });
+  };
+
   // Record manual stock adjustment / physical count reconciliation / breakage write-off
   const recordManualAdjustment = (params: {
     productId: string;
@@ -1786,6 +1812,8 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         switchUserRole,
         addProduct,
         updateProduct,
+        addVendor,
+        updateVendor,
         addBatch,
         inwardStockBatch,
         createInvoice,

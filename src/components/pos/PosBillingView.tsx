@@ -18,6 +18,8 @@ import {
   ShoppingCart,
   X,
   Package,
+  Edit3,
+  Check,
 } from 'lucide-react';
 import { usePharmacy } from '../../context/PharmacyContext';
 import {
@@ -98,6 +100,16 @@ export const PosBillingView: React.FC = () => {
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
+  // Additional Customer, Doctor & Review State for Pre-Save/Print Editing
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [customerAddress2, setCustomerAddress2] = useState('');
+  const [doctorAddress, setDoctorAddress] = useState('');
+  const [doctorMobile, setDoctorMobile] = useState('');
+  const [salesRep, setSalesRep] = useState('SR-01');
+  const [billType, setBillType] = useState('CASH BILL');
+  const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
+  const [preConfirmAction, setPreConfirmAction] = useState<'SAVE' | 'PRINT'>('SAVE');
+
   const searchInputRef = useRef<HTMLInputElement>(null);
   const draftCodeInputRef = useRef<HTMLInputElement>(null);
   const draftNameInputRef = useRef<HTMLInputElement>(null);
@@ -109,6 +121,28 @@ export const PosBillingView: React.FC = () => {
       if (e.key === 'F2') {
         e.preventDefault();
         setIsLookupModalOpen((prev) => !prev);
+      } else if (e.key === 'F4') {
+        e.preventDefault();
+        if (cartItems.length > 0) {
+          setPreConfirmAction('SAVE');
+          setShowReviewModal(true);
+        }
+      } else if (e.key === 'F6') {
+        e.preventDefault();
+        if (cartItems.length > 0) {
+          setPreConfirmAction('SAVE');
+          setShowReviewModal(true);
+        } else {
+          setCheckoutError('Please add at least one medicine to the bill.');
+        }
+      } else if (e.key === 'F10') {
+        e.preventDefault();
+        if (cartItems.length > 0) {
+          setPreConfirmAction('PRINT');
+          setShowReviewModal(true);
+        } else {
+          setCheckoutError('Please add at least one medicine to the bill.');
+        }
       } else if (
         e.key === '/' &&
         document.activeElement?.tagName !== 'INPUT' &&
@@ -299,13 +333,72 @@ export const PosBillingView: React.FC = () => {
             : Number((item.batch.sellingPricePerStrip / stripSize).toFixed(2));
 
         const totalTablets = newUnit === 'STRIP' ? item.quantity * stripSize : item.quantity;
-        const gstCalc = calculateItemGst(unitPrice, item.quantity, item.batch.gstRate, isInterState);
+        const discPercent = item.discountPercent || 0;
+        const effectiveRate = Number((unitPrice * (1 - discPercent / 100)).toFixed(2));
+        const gstCalc = calculateItemGst(effectiveRate, item.quantity, item.batch.gstRate, isInterState);
 
         return {
           ...item,
           unitType: newUnit,
           unitPrice,
           totalTabletsSold: totalTablets,
+          ...gstCalc,
+        };
+      })
+    );
+  };
+
+  const updateCartItemBatch = (cartItemId: string, newBatchId: string) => {
+    setCartItems((prev) =>
+      prev.map((item) => {
+        if (item.cartItemId !== cartItemId) return item;
+        const newBatch = batches.find((b) => b.id === newBatchId) || item.batch;
+        const stripSize = item.product.stripSize || 10;
+        const unitPrice =
+          item.unitType === 'STRIP'
+            ? newBatch.sellingPricePerStrip
+            : Number((newBatch.sellingPricePerStrip / stripSize).toFixed(2));
+        const discPercent = item.discountPercent || 0;
+        const effectiveRate = Number((unitPrice * (1 - discPercent / 100)).toFixed(2));
+        const gstCalc = calculateItemGst(effectiveRate, item.quantity, newBatch.gstRate, isInterState);
+        return {
+          ...item,
+          batch: newBatch,
+          unitPrice,
+          gstRate: newBatch.gstRate,
+          ...gstCalc,
+        };
+      })
+    );
+  };
+
+  const updateCartItemPrice = (cartItemId: string, newPrice: number) => {
+    setCartItems((prev) =>
+      prev.map((item) => {
+        if (item.cartItemId !== cartItemId) return item;
+        const validPrice = Math.max(0, newPrice);
+        const discPercent = item.discountPercent || 0;
+        const effectiveRate = Number((validPrice * (1 - discPercent / 100)).toFixed(2));
+        const gstCalc = calculateItemGst(effectiveRate, item.quantity, item.batch.gstRate, isInterState);
+        return {
+          ...item,
+          unitPrice: validPrice,
+          ...gstCalc,
+        };
+      })
+    );
+  };
+
+  const updateCartItemDiscount = (cartItemId: string, discPercent: number) => {
+    setCartItems((prev) =>
+      prev.map((item) => {
+        if (item.cartItemId !== cartItemId) return item;
+        const validDisc = Math.min(100, Math.max(0, discPercent));
+        const effectiveRate = Number((item.unitPrice * (1 - validDisc / 100)).toFixed(2));
+        const gstCalc = calculateItemGst(effectiveRate, item.quantity, item.batch.gstRate, isInterState);
+        return {
+          ...item,
+          discountPercent: validDisc,
           ...gstCalc,
         };
       })
@@ -319,7 +412,9 @@ export const PosBillingView: React.FC = () => {
         if (item.cartItemId !== cartItemId) return item;
         const stripSize = item.product.stripSize || 10;
         const totalTablets = item.unitType === 'STRIP' ? newQty * stripSize : newQty;
-        const gstCalc = calculateItemGst(item.unitPrice, newQty, item.batch.gstRate, isInterState);
+        const discPercent = item.discountPercent || 0;
+        const effectiveRate = Number((item.unitPrice * (1 - discPercent / 100)).toFixed(2));
+        const gstCalc = calculateItemGst(effectiveRate, newQty, item.batch.gstRate, isInterState);
 
         return {
           ...item,
@@ -437,8 +532,11 @@ export const PosBillingView: React.FC = () => {
       28: { gstRate: 28, taxableAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, totalTax: 0 },
     };
 
+    let totalDiscount = 0;
     cartItems.forEach((item) => {
       subtotal += item.taxableAmount;
+      const itemDiscAmount = ((item.unitPrice * (item.discountPercent || 0) / 100) * item.quantity);
+      totalDiscount += itemDiscAmount;
       totalCgst += item.cgstAmount;
       totalSgst += item.sgstAmount;
       totalIgst += item.igstAmount;
@@ -460,6 +558,7 @@ export const PosBillingView: React.FC = () => {
 
     return {
       subtotal: Number(subtotal.toFixed(2)),
+      totalDiscount: Number(totalDiscount.toFixed(2)),
       totalCgst: Number(totalCgst.toFixed(2)),
       totalSgst: Number(totalSgst.toFixed(2)),
       totalIgst: Number(totalIgst.toFixed(2)),
@@ -470,7 +569,7 @@ export const PosBillingView: React.FC = () => {
     };
   }, [cartItems]);
 
-  const handleFinalCheckout = () => {
+  const handleFinalCheckout = (autoPrint: boolean = false) => {
     if (cartItems.length === 0) {
       setCheckoutError('Please add at least one medicine to the bill.');
       return;
@@ -518,9 +617,10 @@ export const PosBillingView: React.FC = () => {
     }
 
     setCompletedInvoice(newInvoice);
+    setShowReviewModal(false);
     setShowPrintModal(true);
 
-    if (printerSettings.isPrintingEnabled) {
+    if (autoPrint || printerSettings.isPrintingEnabled) {
       setTimeout(() => {
         window.print();
       }, 500);
@@ -917,21 +1017,42 @@ export const PosBillingView: React.FC = () => {
 
                     {/* Batch */}
                     <td className="py-1.5 px-2 text-center">
-                      <input
-                        type="text"
-                        value={item.batch.batchNumber}
-                        readOnly
-                        className="w-full py-1 px-2 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-700"
-                      />
+                      {batches.filter((b) => b.productId === item.product.id).length > 1 ? (
+                        <select
+                          value={item.batch.id}
+                          onChange={(e) => updateCartItemBatch(item.cartItemId, e.target.value)}
+                          className="w-full py-1 px-1 text-center border border-slate-300 rounded text-xs font-mono bg-white text-slate-800 focus:ring-1 focus:ring-sky-500"
+                          title="Change medicine batch"
+                        >
+                          {batches
+                            .filter((b) => b.productId === item.product.id)
+                            .map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.batchNumber} ({b.expiryDate})
+                              </option>
+                            ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={item.batch.batchNumber}
+                          readOnly
+                          className="w-full py-1 px-2 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-700"
+                          title="Batch number"
+                        />
+                      )}
                     </td>
 
-                    {/* MRP */}
+                    {/* MRP / Rate */}
                     <td className="py-1.5 px-2 text-right">
                       <input
-                        type="text"
-                        value={item.batch.mrpPerStrip.toFixed(2)}
-                        readOnly
-                        className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-700"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={item.unitPrice}
+                        onChange={(e) => updateCartItemPrice(item.cartItemId, parseFloat(e.target.value) || 0)}
+                        className="w-full py-1 px-1 text-right border border-slate-300 rounded text-xs font-mono bg-white text-slate-800 font-semibold focus:ring-1 focus:ring-sky-500"
+                        title="Click to edit unit selling price"
                       />
                     </td>
 
@@ -951,19 +1072,24 @@ export const PosBillingView: React.FC = () => {
                     <td className="py-1.5 px-2 text-right">
                       <input
                         type="text"
-                        defaultValue="0.00"
+                        value={((item.unitPrice * (item.discountPercent || 0) / 100) * item.quantity).toFixed(2)}
                         readOnly
-                        className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-500"
+                        className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-700"
+                        title="Calculated discount amount"
                       />
                     </td>
 
                     {/* Discount % */}
                     <td className="py-1.5 px-2 text-center">
                       <input
-                        type="text"
-                        defaultValue="0.00"
-                        readOnly
-                        className="w-full py-1 px-1 text-center border border-slate-200 rounded text-xs font-mono bg-slate-50 text-slate-500"
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        max="100"
+                        value={item.discountPercent ?? 0}
+                        onChange={(e) => updateCartItemDiscount(item.cartItemId, parseFloat(e.target.value) || 0)}
+                        className="w-full py-1 px-1 text-center border border-slate-300 rounded text-xs font-mono bg-white text-slate-800 focus:ring-1 focus:ring-sky-500"
+                        title="Edit discount %"
                       />
                     </td>
 
@@ -981,7 +1107,7 @@ export const PosBillingView: React.FC = () => {
                     <td className="py-1.5 px-2 text-right">
                       <input
                         type="text"
-                        value={(item.unitPrice * item.quantity).toFixed(2)}
+                        value={item.totalAmount.toFixed(2)}
                         readOnly
                         className="w-full py-1 px-2 text-right border border-slate-200 rounded text-xs font-mono font-bold text-slate-900 bg-slate-50"
                       />
@@ -1359,8 +1485,11 @@ export const PosBillingView: React.FC = () => {
             <div className="flex items-center gap-2">
               <label className="w-24 text-slate-600 font-medium">Sales Rep</label>
               <div className="flex-1 flex gap-1">
-                <select className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs bg-white">
-                  <option value="">Select Sales Rep (F5)</option>
+                <select
+                  value={salesRep}
+                  onChange={(e) => setSalesRep(e.target.value)}
+                  className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs bg-white"
+                >
                   <option value="SR-01">Karthik (SR-01)</option>
                   <option value="SR-02">Sundar (SR-02)</option>
                 </select>
@@ -1377,7 +1506,11 @@ export const PosBillingView: React.FC = () => {
             {/* Bill Type */}
             <div className="flex items-center gap-2">
               <label className="w-24 text-slate-600 font-medium">Bill Type</label>
-              <select className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs bg-white">
+              <select
+                value={billType}
+                onChange={(e) => setBillType(e.target.value)}
+                className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs bg-white"
+              >
                 <option value="CASH BILL">CASH BILL</option>
                 <option value="CREDIT BILL">CREDIT BILL</option>
               </select>
@@ -1436,7 +1569,9 @@ export const PosBillingView: React.FC = () => {
               <label className="w-32 text-slate-600 font-medium">Customer Address</label>
               <input
                 type="text"
-                defaultValue=""
+                value={customerAddress}
+                onChange={(e) => setCustomerAddress(e.target.value)}
+                placeholder="Door No, Street"
                 className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs"
               />
             </div>
@@ -1445,7 +1580,9 @@ export const PosBillingView: React.FC = () => {
               <label className="w-32 text-slate-600 font-medium">Customer Address 2</label>
               <input
                 type="text"
-                defaultValue=""
+                value={customerAddress2}
+                onChange={(e) => setCustomerAddress2(e.target.value)}
+                placeholder="Area, Pincode"
                 className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs"
               />
             </div>
@@ -1454,7 +1591,9 @@ export const PosBillingView: React.FC = () => {
               <label className="w-32 text-slate-600 font-medium">Doctor Address</label>
               <input
                 type="text"
-                defaultValue=""
+                value={doctorAddress}
+                onChange={(e) => setDoctorAddress(e.target.value)}
+                placeholder="Clinic / Hospital address"
                 className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs"
               />
             </div>
@@ -1463,7 +1602,9 @@ export const PosBillingView: React.FC = () => {
               <label className="w-32 text-slate-600 font-medium">Doctor Mobile</label>
               <input
                 type="text"
-                defaultValue=""
+                value={doctorMobile}
+                onChange={(e) => setDoctorMobile(e.target.value)}
+                placeholder="10-digit mobile number"
                 className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs font-mono"
               />
             </div>
@@ -1484,7 +1625,7 @@ export const PosBillingView: React.FC = () => {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-600">Discount</span>
-              <span className="font-mono">0.00</span>
+              <span className="font-mono text-emerald-600 font-semibold">{billTotals.totalDiscount.toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-600">Other Charge</span>
@@ -1569,7 +1710,30 @@ export const PosBillingView: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setShowPrintModal(true)}
+            onClick={() => {
+              if (cartItems.length === 0) {
+                setCheckoutError('Please add at least one medicine to the bill.');
+                return;
+              }
+              setPreConfirmAction('SAVE');
+              setShowReviewModal(true);
+            }}
+            className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 text-indigo-700 rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+            title="Review and edit all patient, doctor, pricing and tax details before finalizing"
+          >
+            <FileText className="w-4 h-4 text-indigo-600" />
+            <span>Review & Edit (F4)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (cartItems.length === 0) {
+                setCheckoutError('Please add at least one medicine to the bill.');
+                return;
+              }
+              setPreConfirmAction('PRINT');
+              setShowReviewModal(true);
+            }}
             className="px-4 py-2 bg-white hover:bg-slate-50 border border-sky-400 text-[#0066cc] rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
           >
             <Printer className="w-4 h-4" />
@@ -1577,7 +1741,14 @@ export const PosBillingView: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={handleFinalCheckout}
+            onClick={() => {
+              if (cartItems.length === 0) {
+                setCheckoutError('Please add at least one medicine to the bill.');
+                return;
+              }
+              setPreConfirmAction('SAVE');
+              setShowReviewModal(true);
+            }}
             className="px-5 py-2 bg-[#0084ff] hover:bg-blue-600 text-white rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
           >
             <CheckCircle2 className="w-4 h-4" />
@@ -1585,6 +1756,399 @@ export const PosBillingView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      
+      {/* Review & Edit All Fields Modal Before Confirming Save or Print */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-sky-700 via-sky-800 to-indigo-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/10 rounded-lg">
+                  <FileText className="w-6 h-6 text-sky-200" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">Review & Edit Bill Before Confirmation</h3>
+                  <p className="text-xs text-sky-100">
+                    Verify and modify customer details, doctor details, pricing, discount, and batch before saving or printing.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReviewModal(false)}
+                className="p-1.5 hover:bg-white/10 rounded-full text-white/80 hover:text-white transition-colors"
+                title="Close and return to billing grid"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+              {checkoutError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span className="font-semibold">{checkoutError}</span>
+                </div>
+              )}
+
+              {/* Section 1: Customer & Doctor Details in 2 Columns */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Column 1: Customer / Patient Information */}
+                <div className="bg-slate-50/70 border border-slate-200 rounded-lg p-4 space-y-3">
+                  <div className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <UserCheck className="w-4 h-4 text-sky-600" />
+                    <span>Customer & Patient Information</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-slate-600 font-medium mb-1">Patient / Customer Name *</label>
+                      <input
+                        type="text"
+                        value={prescription.patientName}
+                        onChange={(e) => setPrescription((prev) => ({ ...prev, patientName: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white font-medium focus:ring-1 focus:ring-sky-500"
+                        placeholder="e.g. John Doe / Walk-in Customer"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-600 font-medium mb-1">Customer Mobile</label>
+                        <input
+                          type="text"
+                          value={prescription.patientContact}
+                          onChange={(e) => setPrescription((prev) => ({ ...prev, patientContact: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs font-mono bg-white focus:ring-1 focus:ring-sky-500"
+                          placeholder="10-digit mobile"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-medium mb-1">Gender</label>
+                        <select
+                          value={prescription.patientGender}
+                          onChange={(e) => setPrescription((prev) => ({ ...prev, patientGender: e.target.value as any }))}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white focus:ring-1 focus:ring-sky-500"
+                        >
+                          <option value="MALE">Male</option>
+                          <option value="FEMALE">Female</option>
+                          <option value="OTHER">Other</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-600 font-medium mb-1">Age</label>
+                        <input
+                          type="number"
+                          value={prescription.patientAge ?? ''}
+                          onChange={(e) => setPrescription((prev) => ({ ...prev, patientAge: parseInt(e.target.value) || undefined }))}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs font-mono bg-white focus:ring-1 focus:ring-sky-500"
+                          placeholder="Age in yrs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-medium mb-1">Customer Address</label>
+                        <input
+                          type="text"
+                          value={customerAddress}
+                          onChange={(e) => setCustomerAddress(e.target.value)}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white focus:ring-1 focus:ring-sky-500"
+                          placeholder="City / Street"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 2: Doctor & Clinical Details */}
+                <div className="bg-slate-50/70 border border-slate-200 rounded-lg p-4 space-y-3">
+                  <div className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <FileText className="w-4 h-4 text-sky-600" />
+                    <span>Doctor & Prescription Details</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-600 font-medium mb-1">Doctor Name</label>
+                        <input
+                          type="text"
+                          value={prescription.doctorName}
+                          onChange={(e) => setPrescription((prev) => ({ ...prev, doctorName: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white focus:ring-1 focus:ring-sky-500"
+                          placeholder="e.g. Dr. R. Parthiban"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-medium mb-1">Doctor Reg. No (MCI / State)</label>
+                        <input
+                          type="text"
+                          value={prescription.doctorRegNumber}
+                          onChange={(e) => setPrescription((prev) => ({ ...prev, doctorRegNumber: e.target.value }))}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs font-mono bg-white focus:ring-1 focus:ring-sky-500"
+                          placeholder="Required for Schedule H1"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-600 font-medium mb-1">Doctor Mobile</label>
+                        <input
+                          type="text"
+                          value={doctorMobile}
+                          onChange={(e) => setDoctorMobile(e.target.value)}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs font-mono bg-white focus:ring-1 focus:ring-sky-500"
+                          placeholder="Doctor phone"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-medium mb-1">Clinic / Hospital</label>
+                        <input
+                          type="text"
+                          value={doctorAddress}
+                          onChange={(e) => setDoctorAddress(e.target.value)}
+                          className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white focus:ring-1 focus:ring-sky-500"
+                          placeholder="Hospital or clinic name"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-slate-600 font-medium mb-1">Prescription Notes / Remarks</label>
+                      <input
+                        type="text"
+                        value={prescription.notes}
+                        onChange={(e) => setPrescription((prev) => ({ ...prev, notes: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 border border-slate-300 rounded text-xs bg-white focus:ring-1 focus:ring-sky-500"
+                        placeholder="e.g. After food 5 days"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Payment Mode & Billing Configuration */}
+              <div className="bg-slate-50/70 border border-slate-200 rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-slate-700">Payment Mode:</label>
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                      className="px-2.5 py-1 border border-slate-300 rounded text-xs bg-white font-bold text-sky-700"
+                    >
+                      <option value="UPI">UPI (GooglePay / PhonePe / Paytm)</option>
+                      <option value="CASH">Cash</option>
+                      <option value="CARD">Debit / Credit Card</option>
+                      <option value="CREDIT_DUE">Credit Due (Khata)</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-slate-700">Bill Type:</label>
+                    <select
+                      value={billType}
+                      onChange={(e) => setBillType(e.target.value)}
+                      className="px-2.5 py-1 border border-slate-300 rounded text-xs bg-white"
+                    >
+                      <option value="CASH BILL">CASH BILL</option>
+                      <option value="CREDIT BILL">CREDIT BILL</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 font-medium text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isInterState}
+                      onChange={(e) => setIsInterState(e.target.checked)}
+                      className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span>Inter-State Supply (Apply IGST instead of CGST+SGST)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Section 3: Line Items Table with Complete Field Editing */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    <Package className="w-4 h-4 text-sky-600" />
+                    <span>Medicine Line Items ({cartItems.length}) - Fully Editable</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-500">
+                    Edit unit rate, quantity, discount % or select batch directly in the table
+                  </span>
+                </div>
+                <div className="border border-slate-200 rounded-lg overflow-x-auto shadow-xs">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="py-2 px-2 text-center w-8">#</th>
+                        <th className="py-2 px-3">Medicine Formulation</th>
+                        <th className="py-2 px-2 text-center w-36">Batch</th>
+                        <th className="py-2 px-2 text-center w-24">Unit</th>
+                        <th className="py-2 px-2 text-center w-16">Qty</th>
+                        <th className="py-2 px-2 text-right w-24">Rate (₹)</th>
+                        <th className="py-2 px-2 text-center w-16">Disc %</th>
+                        <th className="py-2 px-2 text-right w-20">Taxable</th>
+                        <th className="py-2 px-2 text-center w-16">GST %</th>
+                        <th className="py-2 px-3 text-right w-24">Total (₹)</th>
+                        <th className="py-2 px-2 text-center w-10">Del</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {cartItems.map((item, idx) => {
+                        const itemBatches = batches.filter((b) => b.productId === item.product.id);
+                        return (
+                          <tr key={item.cartItemId} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-2 px-2 text-center font-semibold text-slate-500">{idx + 1}</td>
+                            <td className="py-2 px-3">
+                              <div className="font-semibold text-slate-900">{item.product.name}</div>
+                              <div className="text-[10px] text-slate-500">{item.product.genericComposition}</div>
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              {itemBatches.length > 1 ? (
+                                <select
+                                  value={item.batch.id}
+                                  onChange={(e) => updateCartItemBatch(item.cartItemId, e.target.value)}
+                                  className="w-full py-1 px-1 border border-slate-300 rounded text-xs font-mono bg-white"
+                                >
+                                  {itemBatches.map((b) => (
+                                    <option key={b.id} value={b.id}>
+                                      {b.batchNumber} (Exp: {b.expiryDate})
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="font-mono text-slate-700 bg-slate-50 px-2 py-1 rounded border border-slate-200 block text-center">
+                                  {item.batch.batchNumber}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <select
+                                value={item.unitType}
+                                onChange={(e) => updateCartItemUnit(item.cartItemId, e.target.value as UnitType)}
+                                className="w-full py-1 px-1 border border-slate-300 rounded text-xs bg-white font-medium"
+                              >
+                                <option value="STRIP">STRIP</option>
+                                <option value="TABLET">TABLET</option>
+                              </select>
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => updateCartItemQuantity(item.cartItemId, Math.max(1, parseInt(e.target.value) || 1))}
+                                className="w-full py-1 px-1 text-center border border-slate-300 rounded text-xs font-mono font-bold"
+                              />
+                            </td>
+                            <td className="py-2 px-2 text-right">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={item.unitPrice}
+                                onChange={(e) => updateCartItemPrice(item.cartItemId, parseFloat(e.target.value) || 0)}
+                                className="w-full py-1 px-1 text-right border border-slate-300 rounded text-xs font-mono font-bold text-slate-900"
+                              />
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                max="100"
+                                value={item.discountPercent ?? 0}
+                                onChange={(e) => updateCartItemDiscount(item.cartItemId, parseFloat(e.target.value) || 0)}
+                                className="w-full py-1 px-1 text-center border border-slate-300 rounded text-xs font-mono"
+                              />
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono text-slate-700">
+                              {item.taxableAmount.toFixed(2)}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-[10px] font-bold text-slate-600">
+                                {item.gstRate}%
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-sky-700">
+                              {item.totalAmount.toFixed(2)}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => removeCartItem(item.cartItemId)}
+                                className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                                title="Delete item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 mx-auto" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Section 4: Live Financial Summary Breakdown */}
+              <div className="bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-100 rounded-lg p-4 flex flex-wrap items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-4 text-slate-600">
+                    <span>Taxable: <strong className="font-mono text-slate-800">₹{billTotals.subtotal.toFixed(2)}</strong></span>
+                    <span>Total Discount: <strong className="font-mono text-emerald-700">₹{billTotals.totalDiscount.toFixed(2)}</strong></span>
+                    <span>Total GST: <strong className="font-mono text-slate-800">₹{billTotals.totalTax.toFixed(2)}</strong></span>
+                    <span>Round-off: <strong className="font-mono text-slate-800">₹{billTotals.roundOff.toFixed(2)}</strong></span>
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {isInterState
+                      ? `IGST: ₹${billTotals.totalIgst.toFixed(2)}`
+                      : `CGST: ₹${billTotals.totalCgst.toFixed(2)} | SGST: ₹${billTotals.totalSgst.toFixed(2)}`}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Net Amount Payable</div>
+                  <div className="text-2xl font-bold font-mono text-sky-700">
+                    ₹{billTotals.grandTotal.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="px-6 py-4 bg-slate-100 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowReviewModal(false)}
+                className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg font-semibold text-xs transition-colors cursor-pointer"
+              >
+                ← Back to Billing Grid
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleFinalCheckout(false)}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Confirm & Save Bill (F6)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFinalCheckout(true)}
+                  className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Confirm & Print Bill (F10)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Invoice Generated & Print Modal */}
       {showPrintModal && completedInvoice && (

@@ -93,6 +93,7 @@ export interface PosCartItem {
   sgstAmount: number;
   igstAmount: number;
   totalAmount: number;
+  discountPercent?: number;
 }
 
 export type PaymentMethod = 'CASH' | 'UPI' | 'CARD' | 'CREDIT_DUE';

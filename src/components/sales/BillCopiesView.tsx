@@ -55,7 +55,7 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
 
   // Selected Bill for details inspection & context actions
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>(invoices[0]?.id || 'SLS-00031');
-  const [showContextMenu, setShowContextMenu] = useState<boolean>(true);
+  const [showContextMenu, setShowContextMenu] = useState<boolean>(false);
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
 
   // Modals state
@@ -82,8 +82,6 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
       setShowCancelModal(true);
     } else if (initialAction === 'RETURNS') {
       setShowReturnModal(true);
-    } else if (initialAction === 'COPIES') {
-      setShowInvoiceViewModal(true);
     }
   }, [initialAction]);
 
@@ -622,71 +620,98 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
           </table>
         </div>
 
-        {/* Floating Context Menu matching Image 3 */}
+        {/* Floating Context Menu with Backdrop and Close Control */}
         {showContextMenu && (
-          <div
-            className="absolute left-[38%] top-[25%] z-20 bg-white border border-slate-200 rounded-lg shadow-xl py-1 text-xs w-52 select-none animate-in fade-in zoom-in-95 duration-100"
-          >
-            <button
-              type="button"
-              onClick={() => setShowCancelModal(true)}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left"
+          <>
+            <div
+              className="fixed inset-0 z-10"
+              onClick={() => setShowContextMenu(false)}
+            />
+            <div
+              className="absolute left-[38%] top-[25%] z-20 bg-white border border-slate-200 rounded-lg shadow-2xl py-1 text-xs w-56 select-none animate-in fade-in zoom-in-95 duration-100"
             >
-              <Ban className="w-3.5 h-3.5 text-rose-600" />
-              <span>Cancel</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowPaymentModal(true)}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left"
-            >
-              <Edit className="w-3.5 h-3.5 text-sky-600" />
-              <span>Bill Detail Modification</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowPaymentModal(true)}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left"
-            >
-              <Edit className="w-3.5 h-3.5 text-slate-600" />
-              <span>Modify</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left"
-            >
-              <Printer className="w-3.5 h-3.5 text-slate-700" />
-              <span>Print</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadPnet}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left"
-            >
-              <FileCheck className="w-3.5 h-3.5 text-slate-600" />
-              <span>Recreate PNET File</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowInvoiceViewModal(true)}
-              className="w-full px-3 py-1.5 flex items-center gap-2 bg-[#e6f4fe] text-[#0066cc] font-bold text-left"
-            >
-              <Eye className="w-3.5 h-3.5 text-[#0066cc]" />
-              <span>Bill View</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (onOpenPosBilling) onOpenPosBilling();
-                triggerNotice(`✓ Loaded ${activeBill.billNumber} into active POS workspace`);
-              }}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left"
-            >
-              <Copy className="w-3.5 h-3.5 text-purple-600" />
-              <span>Bill To Bill Load</span>
-            </button>
-          </div>
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-100 bg-slate-50 rounded-t-lg">
+                <span className="text-[11px] font-bold text-slate-700 font-mono">
+                  {activeBill.billNumber}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowContextMenu(false)}
+                  className="text-slate-400 hover:text-slate-700 font-bold p-0.5 rounded cursor-pointer text-xs"
+                  title="Close popup"
+                >
+                  ✕
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowContextMenu(false);
+                  setShowCancelModal(true);
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left cursor-pointer"
+              >
+                <Ban className="w-3.5 h-3.5 text-rose-600" />
+                <span>Cancel Bill</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowContextMenu(false);
+                  setShowPaymentModal(true);
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left cursor-pointer"
+              >
+                <Edit className="w-3.5 h-3.5 text-sky-600" />
+                <span>Bill Detail Modification</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowContextMenu(false);
+                  window.print();
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-700" />
+                <span>Print Copy</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowContextMenu(false);
+                  handleDownloadPnet();
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left cursor-pointer"
+              >
+                <FileCheck className="w-3.5 h-3.5 text-slate-600" />
+                <span>Recreate PNET File</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowContextMenu(false);
+                  setShowInvoiceViewModal(true);
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 bg-[#e6f4fe] text-[#0066cc] font-bold text-left cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5 text-[#0066cc]" />
+                <span>Bill View Modal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowContextMenu(false);
+                  if (onOpenPosBilling) onOpenPosBilling();
+                  triggerNotice(`✓ Loaded ${activeBill.billNumber} into active POS workspace`);
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-slate-100 text-slate-700 text-left cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-purple-600" />
+                <span>Bill To Bill Load</span>
+              </button>
+            </div>
+          </>
         )}
 
         {/* Pagination matching Image 3 */}

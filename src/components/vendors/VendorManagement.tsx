@@ -8,15 +8,93 @@ import {
   Receipt,
   Barcode,
   FileCheck,
+  Plus,
+  Edit,
 } from 'lucide-react';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { Vendor, Product, Batch, GSTRate, formatINR } from '../../types/pharmacy';
 
 export const VendorManagement: React.FC = () => {
-  const { vendors, products, inwardStockBatch, currentUser } = usePharmacy();
+  const { vendors, addVendor, updateVendor, products, inwardStockBatch, currentUser } = usePharmacy();
 
   const [activeTab, setActiveTab] = useState<'DIRECTORY' | 'INWARD'>('DIRECTORY');
   const [showInwardSuccess, setShowInwardSuccess] = useState(false);
+
+  // Add / Edit Supplier Modal State
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Vendor | null>(null);
+  const [supplierForm, setSupplierForm] = useState<Omit<Vendor, 'id'> & { id?: string }>({
+    companyName: '',
+    contactPerson: '',
+    phone: '',
+    email: '',
+    gstin: '',
+    drugLicenseNumber: '',
+    state: 'Tamil Nadu',
+    city: 'Chennai',
+    creditPeriodDays: 30,
+    balanceDue: 0,
+    isActive: true,
+  });
+
+  const handleOpenAddSupplier = () => {
+    setEditingSupplier(null);
+    setSupplierForm({
+      companyName: '',
+      contactPerson: '',
+      phone: '',
+      email: '',
+      gstin: '',
+      drugLicenseNumber: '',
+      state: 'Tamil Nadu',
+      city: 'Chennai',
+      creditPeriodDays: 30,
+      balanceDue: 0,
+      isActive: true,
+    });
+    setShowSupplierModal(true);
+  };
+
+  const handleOpenEditSupplier = (v: Vendor) => {
+    setEditingSupplier(v);
+    setSupplierForm({
+      id: v.id,
+      companyName: v.companyName,
+      contactPerson: v.contactPerson,
+      phone: v.phone,
+      email: v.email,
+      gstin: v.gstin,
+      drugLicenseNumber: v.drugLicenseNumber,
+      state: v.state,
+      city: v.city || 'Chennai',
+      creditPeriodDays: v.creditPeriodDays,
+      balanceDue: v.balanceDue,
+      isActive: v.isActive,
+    });
+    setShowSupplierModal(true);
+  };
+
+  const handleSaveSupplier = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supplierForm.companyName.trim() || !supplierForm.phone.trim()) {
+      alert('Please fill in Supplier / Company name and Phone number.');
+      return;
+    }
+    if (editingSupplier) {
+      updateVendor({
+        ...editingSupplier,
+        ...supplierForm,
+        id: editingSupplier.id,
+      });
+    } else {
+      const newV: Vendor = {
+        ...supplierForm,
+        id: `vnd_${Date.now()}`,
+      };
+      addVendor(newV);
+    }
+    setShowSupplierModal(false);
+  };
 
   const [inwardForm, setInwardForm] = useState<{
     vendorId: string;
@@ -148,7 +226,22 @@ export const VendorManagement: React.FC = () => {
 
       {/* Tab 1: Wholesaler Directory & Dues */}
       {activeTab === 'DIRECTORY' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-medium">
+              Registered Wholesalers & Suppliers ({vendors.length})
+            </span>
+            <button
+              type="button"
+              onClick={handleOpenAddSupplier}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Add New Supplier</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {vendors.map((vendor) => (
             <div
               key={vendor.id}
@@ -192,19 +285,31 @@ export const VendorManagement: React.FC = () => {
                     {formatINR(vendor.balanceDue)}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInwardForm((prev) => ({ ...prev, vendorId: vendor.id }));
-                    setActiveTab('INWARD');
-                  }}
-                  className="px-2.5 py-1 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded transition-colors cursor-pointer"
-                >
-                  Receive Stock
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditSupplier(vendor)}
+                    className="px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Edit Supplier"
+                  >
+                    <Edit className="w-3 h-3" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInwardForm((prev) => ({ ...prev, vendorId: vendor.id }));
+                      setActiveTab('INWARD');
+                    }}
+                    className="px-2.5 py-1 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded transition-colors cursor-pointer"
+                  >
+                    Receive Stock
+                  </button>
+                </div>
               </div>
             </div>
           ))}
+        </div>
         </div>
       )}
 
@@ -451,6 +556,142 @@ export const VendorManagement: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {/* Modal: Register / Edit Supplier */}
+      {showSupplierModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="font-bold text-sm text-slate-900">
+                {editingSupplier ? 'Edit Supplier Details' : 'Register New Supplier / Wholesaler'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowSupplierModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveSupplier} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Company / Trade Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sri Balaji Pharma Distributors"
+                  value={supplierForm.companyName}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, companyName: e.target.value })}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-900 font-bold"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Contact Person</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. R. Venkatesh"
+                    value={supplierForm.contactPerson}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, contactPerson: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Phone / Mobile *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="+91 98400 12345"
+                    value={supplierForm.phone}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">GSTIN Number</label>
+                  <input
+                    type="text"
+                    placeholder="33AAAAA0000A1Z5"
+                    value={supplierForm.gstin}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, gstin: e.target.value.toUpperCase() })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Drug License (20B/21B)</label>
+                  <input
+                    type="text"
+                    placeholder="TN-CH-20B-12345"
+                    value={supplierForm.drugLicenseNumber}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, drugLicenseNumber: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    placeholder="orders@balajipharma.in"
+                    value={supplierForm.email}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">City / Hub</label>
+                  <input
+                    type="text"
+                    value={supplierForm.city}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, city: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Credit Period (Days)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={supplierForm.creditPeriodDays}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, creditPeriodDays: parseInt(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Outstanding Balance (₹)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={supplierForm.balanceDue}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, balanceDue: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowSupplierModal(false)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-700 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold cursor-pointer shadow-xs"
+                >
+                  Save Supplier
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

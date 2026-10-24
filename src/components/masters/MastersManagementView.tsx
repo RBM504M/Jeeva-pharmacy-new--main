@@ -13,9 +13,10 @@ import {
   CheckCircle2,
   Tag,
   DollarSign,
+  Edit,
 } from 'lucide-react';
 import { usePharmacy } from '../../context/PharmacyContext';
-import { Product, formatINR } from '../../types/pharmacy';
+import { Product, Vendor, DrugSchedule, GSTRate, formatINR } from '../../types/pharmacy';
 import {
   MasterDoctor,
   MasterCustomer,
@@ -54,6 +55,8 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
     doctors,
     addDoctor,
     vendors,
+    addVendor,
+    updateVendor,
     salesReps,
     addSalesRep,
     racks,
@@ -103,6 +106,162 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
     address: 'Chennai',
     isActive: true,
   });
+
+  // Supplier Add / Edit state
+  const [showSupplierModal, setShowSupplierModal] = useState<boolean>(false);
+  const [editingSupplier, setEditingSupplier] = useState<Vendor | null>(null);
+  const [supplierForm, setSupplierForm] = useState<Omit<Vendor, 'id'> & { id?: string }>({
+    companyName: '',
+    contactPerson: '',
+    phone: '',
+    email: '',
+    gstin: '',
+    drugLicenseNumber: '',
+    state: 'Tamil Nadu',
+    city: 'Chennai',
+    creditPeriodDays: 30,
+    balanceDue: 0,
+    isActive: true,
+  });
+
+  const handleOpenAddSupplier = () => {
+    setEditingSupplier(null);
+    setSupplierForm({
+      companyName: '',
+      contactPerson: '',
+      phone: '',
+      email: '',
+      gstin: '',
+      drugLicenseNumber: '',
+      state: 'Tamil Nadu',
+      city: 'Chennai',
+      creditPeriodDays: 30,
+      balanceDue: 0,
+      isActive: true,
+    });
+    setShowSupplierModal(true);
+  };
+
+  const handleOpenEditSupplier = (v: Vendor) => {
+    setEditingSupplier(v);
+    setSupplierForm({
+      id: v.id,
+      companyName: v.companyName,
+      contactPerson: v.contactPerson,
+      phone: v.phone,
+      email: v.email,
+      gstin: v.gstin,
+      drugLicenseNumber: v.drugLicenseNumber,
+      state: v.state,
+      city: v.city || 'Chennai',
+      creditPeriodDays: v.creditPeriodDays,
+      balanceDue: v.balanceDue,
+      isActive: v.isActive,
+    });
+    setShowSupplierModal(true);
+  };
+
+  const handleSaveSupplier = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supplierForm.companyName.trim() || !supplierForm.phone.trim()) {
+      alert('Please fill in Supplier / Company name and Phone number.');
+      return;
+    }
+    if (editingSupplier) {
+      updateVendor({
+        ...editingSupplier,
+        ...supplierForm,
+        id: editingSupplier.id,
+      });
+      showToast(`✓ Updated supplier details for ${supplierForm.companyName}`);
+    } else {
+      const newV: Vendor = {
+        ...supplierForm,
+        id: `vnd_${Date.now()}`,
+      };
+      addVendor(newV);
+      showToast(`✓ Registered new supplier ${supplierForm.companyName}`);
+    }
+    setShowSupplierModal(false);
+  };
+
+  // Product Add / Edit state
+  const [showProductModal, setShowProductModal] = useState<boolean>(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [productForm, setProductForm] = useState<Omit<Product, 'id'> & { id?: string }>({
+    name: '',
+    genericComposition: '',
+    manufacturer: 'Cipla Ltd',
+    drugSchedule: 'SCHEDULE_H',
+    hsnCode: '30049099',
+    barcode: '',
+    stripSize: 10,
+    defaultGstRate: 12,
+    rackLocation: 'A1-01',
+    reorderLevelUnits: 50,
+    isActive: true,
+  });
+
+  const handleOpenAddProduct = () => {
+    setEditingProduct(null);
+    setProductForm({
+      name: '',
+      genericComposition: '',
+      manufacturer: 'Cipla Ltd',
+      drugSchedule: 'SCHEDULE_H',
+      hsnCode: '30049099',
+      barcode: `890${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+      stripSize: 10,
+      defaultGstRate: 12,
+      rackLocation: 'A1-01',
+      reorderLevelUnits: 50,
+    isActive: true,
+    });
+    setShowProductModal(true);
+  };
+
+  const handleOpenEditProduct = (p: Product) => {
+    setEditingProduct(p);
+    setProductForm({
+      id: p.id,
+      name: p.name,
+      genericComposition: p.genericComposition,
+      manufacturer: p.manufacturer,
+      drugSchedule: p.drugSchedule,
+      hsnCode: p.hsnCode,
+      barcode: p.barcode,
+      stripSize: p.stripSize,
+      defaultGstRate: p.defaultGstRate,
+      rackLocation: p.rackLocation || 'A1-01',
+      reorderLevelUnits: p.reorderLevelUnits || 50,
+      isActive: p.isActive !== false,
+    });
+    setShowProductModal(true);
+  };
+
+  const handleSaveProduct = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!productForm.name.trim() || !productForm.genericComposition.trim()) {
+      alert('Please fill in Medicine name and Generic composition.');
+      return;
+    }
+    if (editingProduct) {
+      updateProduct({
+        ...editingProduct,
+        ...productForm,
+        id: editingProduct.id,
+      });
+      showToast(`✓ Updated medicine details for ${productForm.name}`);
+    } else {
+      const newP: Product = {
+        ...productForm,
+        id: `prod_${Date.now()}`,
+      };
+      addProduct(newP);
+      showToast(`✓ Added new medicine ${productForm.name} to product master`);
+    }
+    setShowProductModal(false);
+  };
 
   const [showAddSalesRepModal, setShowAddSalesRepModal] = useState<boolean>(false);
   const [newSalesRep, setNewSalesRep] = useState<Omit<MasterSalesRep, 'id'>>({
@@ -301,50 +460,84 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
       {/* 1. PRODUCT MASTER (Section 2)                            */}
       {/* ======================================================== */}
       {activeTab === 'PRODUCTS' && (
-        <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-100/70 text-slate-700 font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="p-3">Product Name</th>
-                  <th className="p-3">Generic Salt Composition</th>
-                  <th className="p-3">Manufacturer</th>
-                  <th className="p-3">HSN Code</th>
-                  <th className="p-3 text-center">Packing</th>
-                  <th className="p-3 text-center">Schedule</th>
-                  <th className="p-3 text-center">GST %</th>
-                  <th className="p-3">Rack Location</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-800">
-                {products
-                  .filter((p) => !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map((prod) => (
-                    <tr key={prod.id} className="hover:bg-slate-50/60">
-                      <td className="p-3 font-bold text-slate-900">{prod.name}</td>
-                      <td className="p-3 text-slate-600">{prod.genericComposition}</td>
-                      <td className="p-3 text-slate-700 font-medium">{prod.manufacturer}</td>
-                      <td className="p-3 font-mono text-slate-600">{prod.hsnCode}</td>
-                      <td className="p-3 text-center font-mono">{prod.stripSize} tabs/strip</td>
-                      <td className="p-3 text-center">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            prod.drugSchedule === 'OTC'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : prod.drugSchedule === 'SCHEDULE_H1'
-                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}
-                        >
-                          {prod.drugSchedule.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center font-bold text-cyan-800">{prod.defaultGstRate}%</td>
-                      <td className="p-3 text-emerald-700 font-medium">{prod.rackLocation || 'Dispensary Shelf'}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-medium">
+              Registered Products ({products.length}) • Click Edit to modify salt, packing, HSN or schedules
+            </span>
+            <button
+              type="button"
+              onClick={handleOpenAddProduct}
+              className="px-3.5 py-1.5 bg-[#0084ff] hover:bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Add New Medicine</span>
+            </button>
+          </div>
+
+          <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100/70 text-slate-700 font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Product Name</th>
+                    <th className="p-3">Generic Salt Composition</th>
+                    <th className="p-3">Manufacturer</th>
+                    <th className="p-3">HSN Code</th>
+                    <th className="p-3 text-center">Packing</th>
+                    <th className="p-3 text-center">Schedule</th>
+                    <th className="p-3 text-center">GST %</th>
+                    <th className="p-3">Rack Location</th>
+                    <th className="p-3 text-center w-20">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-800">
+                  {products
+                    .filter(
+                      (p) =>
+                        !searchQuery ||
+                        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        p.genericComposition.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        p.hsnCode.includes(searchQuery)
+                    )
+                    .map((prod) => (
+                      <tr key={prod.id} className="hover:bg-slate-50/60">
+                        <td className="p-3 font-bold text-slate-900">{prod.name}</td>
+                        <td className="p-3 text-slate-600">{prod.genericComposition}</td>
+                        <td className="p-3 text-slate-700 font-medium">{prod.manufacturer}</td>
+                        <td className="p-3 font-mono text-slate-600">{prod.hsnCode}</td>
+                        <td className="p-3 text-center font-mono">{prod.stripSize} tabs/strip</td>
+                        <td className="p-3 text-center">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              prod.drugSchedule === 'OTC'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : prod.drugSchedule === 'SCHEDULE_H1'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}
+                          >
+                            {prod.drugSchedule.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center font-bold text-cyan-800">{prod.defaultGstRate}%</td>
+                        <td className="p-3 text-emerald-700 font-medium">{prod.rackLocation || 'Dispensary Shelf'}</td>
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditProduct(prod)}
+                            className="px-2.5 py-1 text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded flex items-center justify-center gap-1 mx-auto cursor-pointer transition-colors"
+                            title="Edit Product Details"
+                          >
+                            <Edit className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -445,33 +638,74 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
       {/* 4. SUPPLIER MASTER (Section 2)                           */}
       {/* ======================================================== */}
       {activeTab === 'SUPPLIERS' && (
-        <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-slate-100/70 text-slate-700 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="p-3">Company Name</th>
-                <th className="p-3">Contact Person</th>
-                <th className="p-3">GSTIN</th>
-                <th className="p-3">Drug License</th>
-                <th className="p-3">Credit Period</th>
-                <th className="p-3 text-right">Balance Due</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-800">
-              {vendors.map((v) => (
-                <tr key={v.id} className="hover:bg-slate-50/60">
-                  <td className="p-3 font-bold text-slate-900">{v.companyName}</td>
-                  <td className="p-3 text-slate-700">{v.contactPerson}</td>
-                  <td className="p-3 font-mono text-slate-600">{v.gstin}</td>
-                  <td className="p-3 font-mono text-slate-600">{v.drugLicenseNumber}</td>
-                  <td className="p-3 font-mono">{v.creditPeriodDays} days</td>
-                  <td className="p-3 text-right font-mono font-bold text-rose-700">
-                    {formatINR(v.balanceDue)}
-                  </td>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-medium">
+              Registered Wholesalers & Distributors ({vendors.length}) • Click Edit to modify GSTIN, DL or credit terms
+            </span>
+            <button
+              type="button"
+              onClick={handleOpenAddSupplier}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Add New Supplier</span>
+            </button>
+          </div>
+
+          <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-xs">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-100/70 text-slate-700 font-semibold border-b border-slate-200">
+                <tr>
+                  <th className="p-3">Company Name</th>
+                  <th className="p-3">Contact Person</th>
+                  <th className="p-3">Phone / Email</th>
+                  <th className="p-3">GSTIN</th>
+                  <th className="p-3">Drug License</th>
+                  <th className="p-3 text-center">Credit Period</th>
+                  <th className="p-3 text-right">Balance Due</th>
+                  <th className="p-3 text-center w-20">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-800">
+                {vendors
+                  .filter(
+                    (v) =>
+                      !searchQuery ||
+                      v.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      v.contactPerson.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      v.gstin.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map((v) => (
+                    <tr key={v.id} className="hover:bg-slate-50/60">
+                      <td className="p-3 font-bold text-slate-900">{v.companyName}</td>
+                      <td className="p-3 text-slate-700">{v.contactPerson}</td>
+                      <td className="p-3 text-slate-600 font-mono text-[11px]">
+                        <div>{v.phone}</div>
+                        <div className="text-slate-400 text-[10px]">{v.email}</div>
+                      </td>
+                      <td className="p-3 font-mono text-slate-600">{v.gstin}</td>
+                      <td className="p-3 font-mono text-slate-600">{v.drugLicenseNumber}</td>
+                      <td className="p-3 text-center font-mono">{v.creditPeriodDays} days</td>
+                      <td className="p-3 text-right font-mono font-bold text-rose-700">
+                        {formatINR(v.balanceDue)}
+                      </td>
+                      <td className="p-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditSupplier(v)}
+                          className="px-2.5 py-1 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded flex items-center justify-center gap-1 mx-auto cursor-pointer transition-colors"
+                          title="Edit Supplier Details"
+                        >
+                          <Edit className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -876,6 +1110,299 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
                   className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold cursor-pointer"
                 >
                   Save Customer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add / Edit Supplier */}
+      {showSupplierModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="font-bold text-sm text-slate-900">
+                {editingSupplier ? `Edit Supplier — ${editingSupplier.companyName}` : 'Register New Wholesaler / Supplier'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowSupplierModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveSupplier} className="space-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">Company / Wholesaler Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. MedPlus Wholesalers Pvt Ltd"
+                    value={supplierForm.companyName}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, companyName: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-900 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Contact Person *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ramesh Kumar"
+                    value={supplierForm.contactPerson}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, contactPerson: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Contact Phone *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. +91 98401 55667"
+                    value={supplierForm.phone}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="e.g. billing@medpluswholesalers.com"
+                    value={supplierForm.email}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">GSTIN Number *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 33AAAAA0000A1Z5"
+                    value={supplierForm.gstin}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, gstin: e.target.value.toUpperCase() })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono font-bold uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Drug License (DL) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. TN/CH/20B/12345"
+                    value={supplierForm.drugLicenseNumber}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, drugLicenseNumber: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">City</label>
+                  <input
+                    type="text"
+                    value={supplierForm.city}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, city: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">State</label>
+                  <input
+                    type="text"
+                    value={supplierForm.state}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, state: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Credit Period (Days)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={supplierForm.creditPeriodDays}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, creditPeriodDays: parseInt(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Opening Balance Due (₹)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={supplierForm.balanceDue}
+                    onChange={(e) => setSupplierForm({ ...supplierForm, balanceDue: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono font-bold text-rose-700"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowSupplierModal(false)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-700 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold cursor-pointer shadow-xs"
+                >
+                  {editingSupplier ? 'Save Changes' : 'Register Supplier'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add / Edit Product */}
+      {showProductModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-xl w-full p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="font-bold text-sm text-slate-900">
+                {editingProduct ? `Edit Medicine — ${editingProduct.name}` : 'Add New Medicine to Product Master'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowProductModal(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">Brand Name of Medicine *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Dolo 650 Tablets"
+                    value={productForm.name}
+                    onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-900 font-bold"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">Generic Salt Composition *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Paracetamol 650mg"
+                    value={productForm.genericComposition}
+                    onChange={(e) => setProductForm({ ...productForm, genericComposition: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-700 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Manufacturer *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Micro Labs Ltd"
+                    value={productForm.manufacturer}
+                    onChange={(e) => setProductForm({ ...productForm, manufacturer: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Drug Schedule *</label>
+                  <select
+                    value={productForm.drugSchedule}
+                    onChange={(e) => setProductForm({ ...productForm, drugSchedule: e.target.value as DrugSchedule })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white font-medium"
+                  >
+                    <option value="OTC">OTC (Over the Counter)</option>
+                    <option value="SCHEDULE_H">Schedule H (Prescription Required)</option>
+                    <option value="SCHEDULE_H1">Schedule H1 (Antibiotics / Habit Forming)</option>
+                    <option value="SCHEDULE_X">Schedule X (Narcotic / Controlled)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">HSN Code *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 30049099"
+                    value={productForm.hsnCode}
+                    onChange={(e) => setProductForm({ ...productForm, hsnCode: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Barcode / SKU</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 8901234567890"
+                    value={productForm.barcode}
+                    onChange={(e) => setProductForm({ ...productForm, barcode: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Tablets per Strip (Pack Size)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={productForm.stripSize}
+                    onChange={(e) => setProductForm({ ...productForm, stripSize: parseInt(e.target.value) || 10 })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Default GST Rate (%)</label>
+                  <select
+                    value={productForm.defaultGstRate}
+                    onChange={(e) => setProductForm({ ...productForm, defaultGstRate: parseInt(e.target.value) as GSTRate })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white font-mono font-bold text-cyan-800"
+                  >
+                    <option value={0}>0% (Exempt)</option>
+                    <option value={5}>5%</option>
+                    <option value={12}>12%</option>
+                    <option value={18}>18%</option>
+                    <option value={28}>28%</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Storage Rack / Shelf Location</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rack A1-02"
+                    value={productForm.rackLocation}
+                    onChange={(e) => setProductForm({ ...productForm, rackLocation: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-medium text-emerald-800"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Reorder Alert Level (Tablets)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={productForm.reorderLevelUnits}
+                    onChange={(e) => setProductForm({ ...productForm, reorderLevelUnits: parseInt(e.target.value) || 0 })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowProductModal(false)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-700 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#0084ff] hover:bg-blue-600 text-white rounded-lg font-semibold cursor-pointer shadow-xs"
+                >
+                  {editingProduct ? 'Save Changes' : 'Add Medicine'}
                 </button>
               </div>
             </form>
