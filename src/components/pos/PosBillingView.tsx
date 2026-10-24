@@ -140,7 +140,7 @@ export const PosBillingView: React.FC = () => {
     );
   }, [products, searchQuery]);
 
-  // Inline Code Autocomplete Matches
+  // Inline Code Autocomplete Matches (search barcode, HSN, ID, or product name)
   const codeMatches = useMemo(() => {
     if (!draftCode.trim()) return [];
     const q = draftCode.trim().toLowerCase();
@@ -149,12 +149,13 @@ export const PosBillingView: React.FC = () => {
         (p) =>
           p.barcode.toLowerCase().includes(q) ||
           p.hsnCode.toLowerCase().includes(q) ||
-          p.id.toLowerCase().includes(q)
+          p.id.toLowerCase().includes(q) ||
+          p.name.toLowerCase().includes(q)
       )
       .slice(0, 8);
   }, [products, draftCode]);
 
-  // Inline Name Autocomplete Matches
+  // Inline Name Autocomplete Matches (search name, salt, barcode, or HSN)
   const nameMatches = useMemo(() => {
     if (!draftName.trim()) return [];
     const q = draftName.trim().toLowerCase();
@@ -162,7 +163,9 @@ export const PosBillingView: React.FC = () => {
       .filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
-          p.genericComposition.toLowerCase().includes(q)
+          p.genericComposition.toLowerCase().includes(q) ||
+          p.barcode.toLowerCase().includes(q) ||
+          p.hsnCode.toLowerCase().includes(q)
       )
       .slice(0, 8);
   }, [products, draftName]);
@@ -1031,6 +1034,16 @@ export const PosBillingView: React.FC = () => {
                         setShowCodeDropdown(true);
                         setShowNameDropdown(false);
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (codeMatches.length > 0) {
+                            selectDraftProduct(codeMatches[0]);
+                          }
+                        } else if (e.key === 'Escape') {
+                          setShowCodeDropdown(false);
+                        }
+                      }}
                       placeholder="Type code / HSN..."
                       className="w-full py-1 pl-2 pr-6 border border-sky-300 focus:border-sky-500 rounded text-xs bg-white font-mono text-slate-800 focus:outline-hidden shadow-2xs"
                     />
@@ -1078,6 +1091,16 @@ export const PosBillingView: React.FC = () => {
                       onFocus={() => {
                         setShowNameDropdown(true);
                         setShowCodeDropdown(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (nameMatches.length > 0) {
+                            selectDraftProduct(nameMatches[0]);
+                          }
+                        } else if (e.key === 'Escape') {
+                          setShowNameDropdown(false);
+                        }
                       }}
                       placeholder="Type medicine name or salt (e.g. Paracetamol)..."
                       className="w-full py-1 px-2 border border-sky-300 focus:border-sky-500 rounded text-xs bg-white font-medium text-slate-800 focus:outline-hidden shadow-2xs"

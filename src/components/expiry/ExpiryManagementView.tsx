@@ -32,9 +32,23 @@ export type ExpiryTab =
   | 'EXPIRY_REPORT';
 
 export interface ExpiryManagementViewProps {
-  initialTab?: ExpiryTab;
+  initialTab?: ExpiryTab | string;
   onNavigateToPurchaseReturn?: () => void;
 }
+
+const normalizeExpiryTab = (tab?: string): ExpiryTab => {
+  if (!tab) return 'DASHBOARD';
+  if (tab === 'DASHBOARD') return 'DASHBOARD';
+  if (tab === 'EXPIRED') return 'EXPIRED';
+  if (tab === '30_DAYS' || tab === 'EXPIRING_30') return 'EXPIRING_30';
+  if (tab === '60_DAYS' || tab === 'EXPIRING_60') return 'EXPIRING_60';
+  if (tab === '90_DAYS' || tab === 'EXPIRING_90') return 'EXPIRING_90';
+  if (tab === 'BATCH_REGISTER') return 'BATCH_REGISTER';
+  if (tab === 'VENDOR_RETURN' || tab === 'NEAR_EXPIRY_RETURN') return 'NEAR_EXPIRY_RETURN';
+  if (tab === 'DISPOSAL' || tab === 'DISPOSAL_REGISTER') return 'DISPOSAL_REGISTER';
+  if (tab === 'REPORT' || tab === 'EXPIRY_REPORT') return 'EXPIRY_REPORT';
+  return 'DASHBOARD';
+};
 
 interface DisposalRecord {
   id: string;
@@ -54,14 +68,14 @@ export const ExpiryManagementView: React.FC<ExpiryManagementViewProps> = ({
 }) => {
   const { batches, products, vendors, currentUser } = usePharmacy();
 
-  const [activeTab, setActiveTab] = useState<ExpiryTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<ExpiryTab>(normalizeExpiryTab(initialTab));
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVendorFilter, setSelectedVendorFilter] = useState('ALL');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (initialTab) {
-      setActiveTab(initialTab);
+      setActiveTab(normalizeExpiryTab(initialTab));
     }
   }, [initialTab]);
 

@@ -39,8 +39,25 @@ export type AccountsTab =
   | 'ACCOUNTS_REPORTS';
 
 export interface AccountsModuleViewProps {
-  initialTab?: AccountsTab;
+  initialTab?: AccountsTab | string;
 }
+
+const normalizeAccountsTab = (tab?: string): AccountsTab => {
+  if (!tab) return 'ACCOUNTS_DASHBOARD';
+  if (tab === 'DASHBOARD' || tab === 'ACCOUNTS_DASHBOARD') return 'ACCOUNTS_DASHBOARD';
+  if (tab === 'SUPPLIER_OUTSTANDING') return 'SUPPLIER_OUTSTANDING';
+  if (tab === 'SUPPLIER_PAYMENTS') return 'SUPPLIER_PAYMENTS';
+  if (tab === 'CUSTOMER_OUTSTANDING') return 'CUSTOMER_OUTSTANDING';
+  if (tab === 'CUSTOMER_RECEIPTS') return 'CUSTOMER_RECEIPTS';
+  if (tab === 'CASH_BOOK') return 'CASH_BOOK';
+  if (tab === 'BANK_BOOK') return 'BANK_BOOK';
+  if (tab === 'EXPENSE_ENTRY') return 'EXPENSE_ENTRY';
+  if (tab === 'CREDIT_DEBIT_NOTES') return 'CREDIT_DEBIT_NOTES';
+  if (tab === 'DAY_BOOK') return 'DAY_BOOK';
+  if (tab === 'LEDGER') return 'LEDGER';
+  if (tab === 'REPORTS' || tab === 'ACCOUNTS_REPORTS') return 'ACCOUNTS_REPORTS';
+  return 'ACCOUNTS_DASHBOARD';
+};
 
 interface ExpenseRecord {
   id: string;
@@ -71,13 +88,13 @@ export const AccountsModuleView: React.FC<AccountsModuleViewProps> = ({
 }) => {
   const { invoices, vendors, customers, currentUser } = usePharmacy();
 
-  const [activeTab, setActiveTab] = useState<AccountsTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<AccountsTab>(normalizeAccountsTab(initialTab));
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (initialTab) {
-      setActiveTab(initialTab);
+      setActiveTab(normalizeAccountsTab(initialTab));
     }
   }, [initialTab]);
 

@@ -87,9 +87,45 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
     }
   }, [initialAction]);
 
-  // Sample master bills list formatted exactly like Image 3
+  // Master bills list: loads real invoices from context with fallback to demo bills
   const sampleInvoicesList = useMemo(() => {
-    const list = [
+    let list: Array<{
+      id: string;
+      billDate: string;
+      billTime: string;
+      billNumber: string;
+      customerName: string;
+      mobileNo: string;
+      billAmount: number;
+      discAmt: number;
+      netAmount: number;
+      terminal: string;
+      mode: string;
+      status: string;
+    }> = [];
+
+    if (invoices && invoices.length > 0) {
+      list = invoices.map((inv, idx) => {
+        const d = inv.invoiceDate ? new Date(inv.invoiceDate) : new Date();
+        const billDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+        const billTime = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        return {
+          id: inv.id,
+          billDate,
+          billTime,
+          billNumber: inv.invoiceNumber || `SLS-${String(idx + 1).padStart(5, '0')}`,
+          customerName: inv.prescription?.patientName || inv.customerName || 'Walk-in Customer',
+          mobileNo: inv.prescription?.patientContact || '-',
+          billAmount: inv.subtotal || inv.grandTotal,
+          discAmt: 0,
+          netAmount: inv.grandTotal,
+          terminal: 'T01',
+          mode: inv.paymentMethod || 'Cash',
+          status: inv.status === 'CANCELLED' ? 'Cancelled' : inv.status === 'RETURNED' ? 'Return' : 'Normal',
+        };
+      });
+    } else {
+      list = [
       {
         id: 'inv_1',
         billDate: '12-10-2026',
@@ -204,18 +240,52 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
       },
     ];
 
+    }
+
     if (!billNoQuery.trim() && !customerQuery.trim()) return list;
     return list.filter((item) => {
       if (billNoQuery.trim() && !item.billNumber.toLowerCase().includes(billNoQuery.toLowerCase())) return false;
       if (customerQuery.trim() && !item.customerName.toLowerCase().includes(customerQuery.toLowerCase())) return false;
       return true;
     });
-  }, [billNoQuery, customerQuery]);
+  }, [invoices, billNoQuery, customerQuery]);
 
-  const activeBill = sampleInvoicesList.find((b) => b.id === selectedInvoiceId) || sampleInvoicesList[1];
+  const activeBill = sampleInvoicesList.find((b) => b.id === selectedInvoiceId) || sampleInvoicesList[0] || {
+    id: 'none',
+    billDate: 'Today',
+    billTime: '10:00 AM',
+    billNumber: 'N/A',
+    customerName: 'N/A',
+    mobileNo: '-',
+    billAmount: 0,
+    discAmt: 0,
+    netAmount: 0,
+    terminal: 'T01',
+    mode: 'Cash',
+    status: 'Normal',
+  };
+
+  const activeRealInvoice = invoices.find((i) => i.id === selectedInvoiceId || i.invoiceNumber === activeBill?.billNumber);
 
   // Bill items corresponding to active selected bill matching Image 3
-  const activeBillItems = [
+  const activeBillItems = useMemo(() => {
+    if (activeRealInvoice && activeRealInvoice.items && activeRealInvoice.items.length > 0) {
+      return activeRealInvoice.items.map((item, idx) => ({
+        idx: idx + 1,
+        name: item.product?.name || 'Medicine',
+        composition: item.product?.genericComposition || item.product?.name || 'Medicine',
+        batch: item.batch?.batchNumber || 'B001',
+        expiry: item.batch?.expiryDate || 'N/A',
+        qty: item.quantity,
+        freeQty: 0,
+        mrp: item.batch?.mrpPerStrip || item.unitPrice,
+        rate: item.unitPrice,
+        discPercent: 0,
+        discAmt: 0,
+        amount: item.totalAmount,
+      }));
+    }
+    return [
     {
       idx: 1,
       name: 'Paracetamol 500mg',
@@ -272,7 +342,8 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
       discAmt: 0.0,
       amount: 70.0,
     },
-  ];
+    ];
+  }, [activeRealInvoice]);
 
   // Real context invoice handler (fallback)
   const realSelectedInvoice = invoices.find((i) => i.id === selectedInvoiceId) || invoices[0];

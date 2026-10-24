@@ -81,4 +81,44 @@ describe('Purchase Order View & New Sales Empty Rows Fixes', () => {
     const rowsAfterClear = tableBody?.querySelectorAll('tr');
     expect(rowsAfterClear?.length).toBe(1);
   });
+
+  test('Searching product name and pressing Enter selects product and adds to cart upon Enter in quantity', () => {
+    render(
+      <PharmacyProvider>
+        <PosBillingView />
+      </PharmacyProvider>
+    );
+
+    const nameInput = screen.getByPlaceholderText(/Type medicine name or salt/i);
+    fireEvent.change(nameInput, { target: { value: 'Paracetamol' } });
+    fireEvent.keyDown(nameInput, { key: 'Enter', code: 'Enter' });
+
+    // Should focus quantity input and fill in draft product
+    const qtyInput = screen.getByRole('spinbutton');
+    expect(qtyInput).toHaveValue(1);
+
+    // Pressing Enter in quantity adds to cart
+    fireEvent.keyDown(qtyInput, { key: 'Enter', code: 'Enter' });
+
+    // Grid should now have 2 rows: 1 committed cart row + 1 new draft input row
+    const tableBody = document.querySelector('tbody');
+    expect(tableBody?.querySelectorAll('tr').length).toBe(2);
+  });
+
+  test('Searching product code/HSN selects product directly', () => {
+    render(
+      <PharmacyProvider>
+        <PosBillingView />
+      </PharmacyProvider>
+    );
+
+    const codeInput = screen.getByPlaceholderText(/Type code \/ HSN/i);
+    fireEvent.change(codeInput, { target: { value: '3004' } });
+    fireEvent.keyDown(codeInput, { key: 'Enter', code: 'Enter' });
+
+    // Qty input should be active and populated
+    const qtyInput = screen.getByRole('spinbutton');
+    expect(qtyInput).toHaveValue(1);
+  });
 });
+

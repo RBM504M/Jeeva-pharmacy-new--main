@@ -49,7 +49,45 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
   const [finYear, setFinYear] = useState<string>('2026 - 2027');
   const [taxPeriod, setTaxPeriod] = useState<string>('October 2026');
   const [gstinSearch, setGstinSearch] = useState<string>('33ABCDE1234F1Z5');
-  const [activeReportName, setActiveReportName] = useState<string>('GST Input Register');
+  const [activeReportName, setActiveReportName] = useState<string>(() => {
+    const tileMap: Record<string, string> = {
+      CLOSING_STOCK: 'Closing Stock Report (VAT Period)',
+      UPDATE_REF: 'Update Reference for Return',
+      INPUT_REGISTER: 'GST Input Register',
+      HSN_PURCHASE: 'HSN-wise Purchase Report',
+      OUTPUT_REGISTER: 'GST Output Register',
+      HSN_SALES: 'HSN-wise Sales Report',
+      GSTR_3B: 'GST Breakup Summary (3B)',
+      GSTR_1: 'GSTR-1',
+      GSTR_1_SUMMARY: 'GSTR-1 Summary',
+      GSP_SETTINGS: 'GSP Settings',
+      GSP_EXPORT: 'GSP Export',
+      GSTR_2: 'GSTR-2',
+    };
+    return tileMap[initialTab] || 'GST Input Register';
+  });
+
+  const tileMap: Record<string, string> = {
+    CLOSING_STOCK: 'Closing Stock Report (VAT Period)',
+    UPDATE_REF: 'Update Reference for Return',
+    INPUT_REGISTER: 'GST Input Register',
+    HSN_PURCHASE: 'HSN-wise Purchase Report',
+    OUTPUT_REGISTER: 'GST Output Register',
+    HSN_SALES: 'HSN-wise Sales Report',
+    GSTR_3B: 'GST Breakup Summary (3B)',
+    GSTR_1: 'GSTR-1',
+    GSTR_1_SUMMARY: 'GSTR-1 Summary',
+    GSP_SETTINGS: 'GSP Settings',
+    GSP_EXPORT: 'GSP Export',
+    GSTR_2: 'GSTR-2',
+  };
+
+  React.useEffect(() => {
+    if (initialTab) {
+      const mapped = tileMap[initialTab] || initialTab;
+      setActiveReportName(mapped);
+    }
+  }, [initialTab]);
 
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
@@ -423,7 +461,7 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
               setActiveReportName(tile.title);
               showToast(`✓ Switched view to: ${tile.title}`);
             }}
-            className="bg-white border border-slate-200/90 hover:border-sky-400 rounded-lg p-3 shadow-xs cursor-pointer transition-all hover:shadow-md flex items-center justify-between gap-3 group"
+            className={`bg-white border rounded-lg p-3 shadow-xs cursor-pointer transition-all hover:shadow-md flex items-center justify-between gap-3 group ${activeReportName === tile.title ? 'border-[#0084ff] ring-2 ring-blue-100 bg-sky-50/20' : 'border-slate-200/90 hover:border-sky-400'}`}
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className={`w-10 h-10 rounded-lg ${tile.color} flex items-center justify-center shrink-0 shadow-xs`}>

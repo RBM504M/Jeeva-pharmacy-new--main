@@ -10,6 +10,7 @@ import {
   Wallet,
   Pill,
   Settings,
+  Sliders,
   ChevronRight,
   ChevronDown,
   Calendar,
@@ -40,6 +41,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { AppView } from '../../App';
+import { usePharmacy } from '../../context/PharmacyContext';
 
 interface SidebarNavigationProps {
   currentView: AppView;
@@ -82,9 +84,11 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   expandedMenus,
   toggleAccordion,
 }) => {
+  const { isMenuEnabled, isSubmenuEnabled } = usePharmacy();
   return (
     <nav className="p-2 space-y-0.5 text-xs font-medium">
       {/* 1. Home */}
+      {isMenuEnabled('home') && (
       <button
         type="button"
         onClick={() => onNavigate('DASHBOARD')}
@@ -97,8 +101,10 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
         <Home className="w-4 h-4 shrink-0" />
         <span>Home</span>
       </button>
+      )}
 
       {/* 2. POS / Sales (Expandable) */}
+      {isMenuEnabled('pos') && (
       <div>
         <button
           type="button"
@@ -122,6 +128,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.pos && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('pos', 'new_sale') && (
             <button
               type="button"
               onClick={() => onNavigate('POS')}
@@ -134,6 +141,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>New Sale</span>
             </button>
+          )}
+            {isSubmenuEnabled('pos', 'bill_copy') && (
             <button
               type="button"
               onClick={() => onNavigate('BILL_COPIES', 'COPIES')}
@@ -146,6 +155,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Copy className="w-3.5 h-3.5 shrink-0" />
               <span>Bill Copy</span>
             </button>
+          )}
+            {isSubmenuEnabled('pos', 'sales_modification') && (
             <button
               type="button"
               onClick={() => onNavigate('BILL_COPIES', 'MODIFICATION')}
@@ -158,6 +169,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Edit className="w-3.5 h-3.5 shrink-0" />
               <span>Sales Modification</span>
             </button>
+          )}
+            {isSubmenuEnabled('pos', 'sales_cancellation') && (
             <button
               type="button"
               onClick={() => onNavigate('BILL_COPIES', 'CANCELLATION')}
@@ -170,6 +183,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Ban className="w-3.5 h-3.5 shrink-0" />
               <span>Sales Cancellation</span>
             </button>
+          )}
+            {isSubmenuEnabled('pos', 'sales_return') && (
             <button
               type="button"
               onClick={() => onNavigate('BILL_COPIES', 'RETURNS')}
@@ -182,11 +197,13 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Sales Return</span>
             </button>
+          )}
             <div className="pt-1 border-t border-slate-800/80 my-0.5">
               <span className="px-3 text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-0.5">
                 Sales Report
               </span>
-              <button
+              {isSubmenuEnabled('pos', 'daily_sales_report') && (
+            <button
                 type="button"
                 onClick={() => onNavigate('SALES_REPORTS', 'DAILY')}
                 className={`w-full flex items-center gap-2 px-3 py-1 rounded-md text-[11px] transition-all cursor-pointer text-left ${
@@ -198,7 +215,9 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
                 <BarChart3 className="w-3.5 h-3.5 shrink-0" />
                 <span>Daily Sales Report</span>
               </button>
-              <button
+          )}
+              {isSubmenuEnabled('pos', 'monthly_sales_report') && (
+            <button
                 type="button"
                 onClick={() => onNavigate('SALES_REPORTS', 'MONTHLY')}
                 className={`w-full flex items-center gap-2 px-3 py-1 rounded-md text-[11px] transition-all cursor-pointer text-left ${
@@ -210,12 +229,15 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
                 <BarChart3 className="w-3.5 h-3.5 shrink-0" />
                 <span>Monthly Sales Report</span>
               </button>
+          )}
             </div>
           </div>
         )}
       </div>
+)}
 
       {/* 3. Purchase (Expandable) */}
+      {isMenuEnabled('purchase') && (
       <div>
         <button
           type="button"
@@ -239,6 +261,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.purchase && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('purchase', 'purchase_entry') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ENTRY', 'ENTRY')}
@@ -251,6 +274,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Entry</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase', 'purchase_return') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ENTRY', 'RETURNS')}
@@ -263,6 +288,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Return</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase', 'purchase_cancellation') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ENTRY', 'CANCELLATION')}
@@ -275,6 +302,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Ban className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Cancellation</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase', 'purchase_modification') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ENTRY', 'MODIFICATION')}
@@ -287,6 +316,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Edit className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Modification</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase', 'purchase_copies') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ENTRY', 'COPIES')}
@@ -299,6 +330,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Copy className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Copies</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase', 'purchase_report') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ENTRY', 'REPORT')}
@@ -311,11 +344,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Report</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 4. Purchase Order (Expandable) */}
+      {isMenuEnabled('purchase_order') && (
       <div>
         <button
           type="button"
@@ -339,6 +375,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.purchase_order && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('purchase_order', 'new_po') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ORDERS', 'NEW')}
@@ -351,6 +388,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>New Purchase Order</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase_order', 'po_register') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ORDERS', 'REGISTER')}
@@ -363,6 +402,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ClipboardList className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Order Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase_order', 'pending_po') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ORDERS', 'PENDING')}
@@ -375,6 +416,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span>Pending Purchase Orders</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase_order', 'partial_po') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ORDERS', 'PARTIAL')}
@@ -387,6 +430,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Package className="w-3.5 h-3.5 shrink-0" />
               <span>Partially Received Orders</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase_order', 'completed_po') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ORDERS', 'COMPLETED')}
@@ -399,6 +444,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
               <span>Completed Orders</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase_order', 'cancelled_po') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ORDERS', 'CANCELLED')}
@@ -411,6 +458,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Ban className="w-3.5 h-3.5 shrink-0" />
               <span>Cancelled Orders</span>
             </button>
+          )}
+            {isSubmenuEnabled('purchase_order', 'po_report') && (
             <button
               type="button"
               onClick={() => onNavigate('PURCHASE_ORDERS', 'REPORT')}
@@ -423,11 +472,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Order Report</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 5. GRN (Goods Receipt) (Expandable) */}
+      {isMenuEnabled('grn') && (
       <div>
         <button
           type="button"
@@ -451,6 +503,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.grn && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('grn', 'new_grn') && (
             <button
               type="button"
               onClick={() => onNavigate('GRN_SUITE', 'NEW')}
@@ -463,6 +516,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>New GRN</span>
             </button>
+          )}
+            {isSubmenuEnabled('grn', 'grn_register') && (
             <button
               type="button"
               onClick={() => onNavigate('GRN_SUITE', 'REGISTER')}
@@ -475,6 +530,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ClipboardList className="w-3.5 h-3.5 shrink-0" />
               <span>GRN Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('grn', 'pending_grn') && (
             <button
               type="button"
               onClick={() => onNavigate('GRN_SUITE', 'PENDING')}
@@ -487,6 +544,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span>Pending GRN</span>
             </button>
+          )}
+            {isSubmenuEnabled('grn', 'partial_grn') && (
             <button
               type="button"
               onClick={() => onNavigate('GRN_SUITE', 'PARTIAL')}
@@ -499,6 +558,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Package className="w-3.5 h-3.5 shrink-0" />
               <span>Partially Received GRN</span>
             </button>
+          )}
+            {isSubmenuEnabled('grn', 'grn_modification') && (
             <button
               type="button"
               onClick={() => onNavigate('GRN_SUITE', 'MODIFICATION')}
@@ -511,6 +572,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Edit className="w-3.5 h-3.5 shrink-0" />
               <span>GRN Modification</span>
             </button>
+          )}
+            {isSubmenuEnabled('grn', 'grn_cancellation') && (
             <button
               type="button"
               onClick={() => onNavigate('GRN_SUITE', 'CANCELLATION')}
@@ -523,6 +586,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Ban className="w-3.5 h-3.5 shrink-0" />
               <span>GRN Cancellation</span>
             </button>
+          )}
+            {isSubmenuEnabled('grn', 'grn_copies') && (
             <button
               type="button"
               onClick={() => onNavigate('GRN_SUITE', 'COPIES')}
@@ -535,6 +600,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Copy className="w-3.5 h-3.5 shrink-0" />
               <span>GRN Copies</span>
             </button>
+          )}
+            {isSubmenuEnabled('grn', 'grn_report') && (
             <button
               type="button"
               onClick={() => onNavigate('GRN_SUITE', 'REPORT')}
@@ -547,11 +614,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>GRN Report</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 6. Inventory / Stock (Expandable) */}
+      {isMenuEnabled('inventory') && (
       <div>
         <button
           type="button"
@@ -575,6 +645,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.inventory && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('inventory', 'stock_overview') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'OVERVIEW')}
@@ -587,6 +658,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>Stock Overview</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'product_stock') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'PRODUCT_STOCK')}
@@ -599,6 +672,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Package className="w-3.5 h-3.5 shrink-0" />
               <span>Product Stock</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'batch_stock') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'BATCH_STOCK')}
@@ -611,6 +686,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Batch-wise Stock</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'stock_ledger') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'STOCK_LEDGER')}
@@ -623,6 +700,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
               <span>Stock Ledger</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'opening_stock') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'OPENING_STOCK')}
@@ -635,6 +714,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Database className="w-3.5 h-3.5 shrink-0" />
               <span>Opening Stock</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'stock_adjustment') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'STOCK_ADJUSTMENT')}
@@ -647,6 +728,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Edit className="w-3.5 h-3.5 shrink-0" />
               <span>Stock Adjustment</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'stock_transfer') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'STOCK_TRANSFER')}
@@ -659,6 +742,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Truck className="w-3.5 h-3.5 shrink-0" />
               <span>Stock Transfer</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'physical_verification') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'PHYSICAL_VERIFICATION')}
@@ -671,6 +756,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
               <span>Physical Stock Verification</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'stock_valuation') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'STOCK_VALUATION')}
@@ -683,6 +770,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <DollarSign className="w-3.5 h-3.5 shrink-0" />
               <span>Stock Valuation</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'low_stock') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'LOW_STOCK')}
@@ -695,6 +784,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
               <span>Low Stock / Reorder List</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'out_of_stock') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'OUT_OF_STOCK')}
@@ -707,6 +798,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Ban className="w-3.5 h-3.5 shrink-0 text-rose-400" />
               <span>Out-of-Stock Products</span>
             </button>
+          )}
+            {isSubmenuEnabled('inventory', 'adjustment_report') && (
             <button
               type="button"
               onClick={() => onNavigate('INVENTORY', 'ADJUSTMENT_REPORT')}
@@ -719,11 +812,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Stock Adjustment Report</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 7. Expiry Management (Expandable) */}
+      {isMenuEnabled('expiry') && (
       <div>
         <button
           type="button"
@@ -747,6 +843,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.expiry && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('expiry', 'expiry_dashboard') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', 'DASHBOARD')}
@@ -759,6 +856,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>Expiry Dashboard</span>
             </button>
+          )}
+            {isSubmenuEnabled('expiry', 'expired_products') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', 'EXPIRED')}
@@ -771,6 +870,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
               <span>Expired Products</span>
             </button>
+          )}
+            {isSubmenuEnabled('expiry', 'expiring_30') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', '30_DAYS')}
@@ -783,6 +884,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Clock className="w-3.5 h-3.5 shrink-0 text-amber-400" />
               <span>Expiring in 30 Days</span>
             </button>
+          )}
+            {isSubmenuEnabled('expiry', 'expiring_60') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', '60_DAYS')}
@@ -795,6 +898,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Clock className="w-3.5 h-3.5 shrink-0 text-amber-300" />
               <span>Expiring in 60 Days</span>
             </button>
+          )}
+            {isSubmenuEnabled('expiry', 'expiring_90') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', '90_DAYS')}
@@ -807,6 +912,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Clock className="w-3.5 h-3.5 shrink-0 text-sky-400" />
               <span>Expiring in 90 Days</span>
             </button>
+          )}
+            {isSubmenuEnabled('expiry', 'batch_expiry_register') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', 'BATCH_REGISTER')}
@@ -819,6 +926,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ClipboardList className="w-3.5 h-3.5 shrink-0" />
               <span>Batch-wise Expiry Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('expiry', 'vendor_return') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', 'VENDOR_RETURN')}
@@ -831,6 +940,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Near-Expiry Return</span>
             </button>
+          )}
+            {isSubmenuEnabled('expiry', 'disposal_register') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', 'DISPOSAL')}
@@ -843,6 +954,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Ban className="w-3.5 h-3.5 shrink-0 text-rose-400" />
               <span>Expiry Disposal Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('expiry', 'expiry_report') && (
             <button
               type="button"
               onClick={() => onNavigate('EXPIRY_MANAGEMENT', 'REPORT')}
@@ -855,11 +968,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Expiry Report</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 8. Batch & Traceability (Expandable) */}
+      {isMenuEnabled('batch') && (
       <div>
         <button
           type="button"
@@ -883,6 +999,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.batch && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('batch', 'batch_register') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'REGISTER')}
@@ -895,6 +1012,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ClipboardList className="w-3.5 h-3.5 shrink-0" />
               <span>Batch Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('batch', 'batch_stock') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'STOCK')}
@@ -907,6 +1026,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Package className="w-3.5 h-3.5 shrink-0" />
               <span>Batch-wise Stock</span>
             </button>
+          )}
+            {isSubmenuEnabled('batch', 'batch_movement') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'MOVEMENT')}
@@ -919,6 +1040,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Batch Movement History</span>
             </button>
+          )}
+            {isSubmenuEnabled('batch', 'traceability') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'TRACEABILITY')}
@@ -931,6 +1054,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FolderTree className="w-3.5 h-3.5 shrink-0" />
               <span>Supplier-to-Batch Traceability</span>
             </button>
+          )}
+            {isSubmenuEnabled('batch', 'quality_check') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'QUALITY')}
@@ -943,6 +1068,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
               <span>Batch Quality Check</span>
             </button>
+          )}
+            {isSubmenuEnabled('batch', 'quarantine') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'QUARANTINE')}
@@ -955,6 +1082,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-amber-400" />
               <span>Quarantine / Hold Stock</span>
             </button>
+          )}
+            {isSubmenuEnabled('batch', 'recall') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'RECALL')}
@@ -967,6 +1096,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
               <span>Recall Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('batch', 'damaged_stock') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'DAMAGED')}
@@ -979,6 +1110,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Ban className="w-3.5 h-3.5 shrink-0 text-rose-400" />
               <span>Damaged Stock Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('batch', 'batch_report') && (
             <button
               type="button"
               onClick={() => onNavigate('BATCH_TRACEABILITY', 'REPORT')}
@@ -991,11 +1124,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>Batch Traceability Report</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 9. Files / Masters (Expandable) */}
+      {isMenuEnabled('masters') && (
       <div>
         <button
           type="button"
@@ -1019,6 +1155,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.masters && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('masters', 'suppliers') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'SUPPLIERS')}
@@ -1031,6 +1168,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Truck className="w-3.5 h-3.5 shrink-0" />
               <span>Supplier Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'customers') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'CUSTOMERS')}
@@ -1043,6 +1182,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Users className="w-3.5 h-3.5 shrink-0" />
               <span>Customer Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'sales_reps') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'SALES_REPS')}
@@ -1055,6 +1196,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <UserCheck className="w-3.5 h-3.5 shrink-0" />
               <span>Sales Representative Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'doctors') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'DOCTORS')}
@@ -1067,6 +1210,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Stethoscope className="w-3.5 h-3.5 shrink-0" />
               <span>Doctor Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'products') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'PRODUCTS')}
@@ -1079,6 +1224,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Pill className="w-3.5 h-3.5 shrink-0" />
               <span>Product / Medicine Master</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'manufacturers') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'MANUFACTURERS')}
@@ -1091,6 +1238,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Building2 className="w-3.5 h-3.5 shrink-0" />
               <span>Manufacturer Master</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'compositions') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'COMPOSITIONS')}
@@ -1103,6 +1252,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Composition Master</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'categories') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'CATEGORIES')}
@@ -1115,6 +1266,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FolderTree className="w-3.5 h-3.5 shrink-0" />
               <span>Drug Category Master</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'hsn_gst') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'HSN_GST')}
@@ -1127,6 +1280,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
               <span>HSN / GST Master</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'unit_packing') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'UNIT_PACKING')}
@@ -1139,6 +1294,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Package className="w-3.5 h-3.5 shrink-0" />
               <span>Unit / Packing Master</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'racks') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'RACKS')}
@@ -1151,6 +1308,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <MapPin className="w-3.5 h-3.5 shrink-0" />
               <span>Rack / Location Master</span>
             </button>
+          )}
+            {isSubmenuEnabled('masters', 'payment_modes') && (
             <button
               type="button"
               onClick={() => onNavigate('MASTERS', 'PAYMENT_MODES')}
@@ -1163,11 +1322,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Wallet className="w-3.5 h-3.5 shrink-0" />
               <span>Payment Mode Master</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 10. Accounts (Expandable) */}
+      {isMenuEnabled('accounts') && (
       <div>
         <button
           type="button"
@@ -1191,6 +1353,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.accounts && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('accounts', 'accounts_dashboard') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'DASHBOARD')}
@@ -1203,6 +1366,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>Accounts Dashboard</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'supplier_outstanding') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'SUPPLIER_OUTSTANDING')}
@@ -1215,6 +1380,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Truck className="w-3.5 h-3.5 shrink-0" />
               <span>Supplier Outstanding</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'supplier_payments') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'SUPPLIER_PAYMENTS')}
@@ -1227,6 +1394,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <DollarSign className="w-3.5 h-3.5 shrink-0" />
               <span>Supplier Payments</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'customer_outstanding') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'CUSTOMER_OUTSTANDING')}
@@ -1239,6 +1408,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Users className="w-3.5 h-3.5 shrink-0" />
               <span>Customer Outstanding</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'customer_receipts') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'CUSTOMER_RECEIPTS')}
@@ -1251,6 +1422,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Receipt className="w-3.5 h-3.5 shrink-0" />
               <span>Customer Receipts</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'cash_book') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'CASH_BOOK')}
@@ -1263,6 +1436,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Wallet className="w-3.5 h-3.5 shrink-0" />
               <span>Cash Book</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'bank_book') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'BANK_BOOK')}
@@ -1275,6 +1450,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Building2 className="w-3.5 h-3.5 shrink-0" />
               <span>Bank Book</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'expense_entry') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'EXPENSE_ENTRY')}
@@ -1287,6 +1464,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Expense Entry</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'credit_debit_notes') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'CREDIT_DEBIT_NOTES')}
@@ -1299,6 +1478,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Credit / Debit Notes</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'day_book') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'DAY_BOOK')}
@@ -1311,6 +1492,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Calendar className="w-3.5 h-3.5 shrink-0" />
               <span>Day Book</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'ledger') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'LEDGER')}
@@ -1323,6 +1506,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
               <span>Ledger</span>
             </button>
+          )}
+            {isSubmenuEnabled('accounts', 'accounts_reports') && (
             <button
               type="button"
               onClick={() => onNavigate('ACCOUNTS', 'REPORTS')}
@@ -1335,11 +1520,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>Accounts Reports</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 11. GST Reports (Expandable) */}
+      {isMenuEnabled('gst') && (
       <div>
         <button
           type="button"
@@ -1363,6 +1551,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.gst && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('gst', 'closing_stock') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'CLOSING_STOCK')}
@@ -1375,6 +1564,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
               <span>Closing Stock Report (VAT Period)</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'update_ref') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'UPDATE_REF')}
@@ -1387,6 +1578,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Update Reference for Return</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'input_register') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'INPUT_REGISTER')}
@@ -1399,6 +1592,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>GST Input Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'hsn_purchase') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'HSN_PURCHASE')}
@@ -1411,6 +1606,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
               <span>HSN-wise Purchase Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'output_register') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'OUTPUT_REGISTER')}
@@ -1423,6 +1620,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>GST Output Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'hsn_sales') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'HSN_SALES')}
@@ -1435,6 +1634,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>HSN-wise Sales Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'gstr_3b') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'GSTR_3B')}
@@ -1447,6 +1648,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Database className="w-3.5 h-3.5 shrink-0" />
               <span>GST Breakup Summary (3B)</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'gstr_1') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'GSTR_1')}
@@ -1459,6 +1662,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Download className="w-3.5 h-3.5 shrink-0" />
               <span>GSTR-1</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'gstr_1_summary') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'GSTR_1_SUMMARY')}
@@ -1471,6 +1676,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>GSTR-1 Summary</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'gsp_settings') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'GSP_SETTINGS')}
@@ -1483,6 +1690,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Settings className="w-3.5 h-3.5 shrink-0" />
               <span>GSP Settings</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'gsp_export') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'GSP_EXPORT')}
@@ -1495,6 +1704,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Download className="w-3.5 h-3.5 shrink-0" />
               <span>GSP Export</span>
             </button>
+          )}
+            {isSubmenuEnabled('gst', 'gstr_2') && (
             <button
               type="button"
               onClick={() => onNavigate('GST_REPORTS', 'GSTR_2')}
@@ -1507,11 +1718,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>GSTR-2</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 12. Reports (Expandable) */}
+      {isMenuEnabled('reports') && (
       <div>
         <button
           type="button"
@@ -1535,6 +1749,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.reports && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('reports', 'expiry_report') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'EXPIRY')}
@@ -1547,6 +1762,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Calendar className="w-3.5 h-3.5 shrink-0" />
               <span>Expiry Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'non_moving') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'NON_MOVING')}
@@ -1559,6 +1776,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Package className="w-3.5 h-3.5 shrink-0" />
               <span>Non-Moving Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'prescription') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'PRESCRIPTION')}
@@ -1571,6 +1790,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ClipboardList className="w-3.5 h-3.5 shrink-0" />
               <span>Prescription Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'daily_collection') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'DAILY_COLLECTION')}
@@ -1583,6 +1804,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <DollarSign className="w-3.5 h-3.5 shrink-0" />
               <span>Daily Collection Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'product_sales') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'PRODUCT_SALES')}
@@ -1595,6 +1818,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>Product Sales Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'supplier_purchase') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'SUPPLIER_PURCHASE')}
@@ -1607,6 +1832,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Truck className="w-3.5 h-3.5 shrink-0" />
               <span>Supplier Purchase Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'profit_margin') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'PROFIT_MARGIN')}
@@ -1619,6 +1846,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <DollarSign className="w-3.5 h-3.5 shrink-0" />
               <span>Profit / Margin Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'stock_valuation') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'STOCK_VALUATION')}
@@ -1631,6 +1860,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Layers className="w-3.5 h-3.5 shrink-0" />
               <span>Stock Valuation Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'purchase_register') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'PURCHASE_REGISTER')}
@@ -1643,6 +1874,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Purchase Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'sales_register') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'SALES_REGISTER')}
@@ -1655,6 +1888,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileCheck className="w-3.5 h-3.5 shrink-0" />
               <span>Sales Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'returns_register') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'RETURNS_REGISTER')}
@@ -1667,6 +1902,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Returns Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'cancelled_txn') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'CANCELLED_TXN')}
@@ -1679,6 +1916,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Ban className="w-3.5 h-3.5 shrink-0 text-rose-400" />
               <span>Cancelled Transactions Report</span>
             </button>
+          )}
+            {isSubmenuEnabled('reports', 'audit_trail') && (
             <button
               type="button"
               onClick={() => onNavigate('REPORTS_SUITE', 'AUDIT_TRAIL')}
@@ -1691,11 +1930,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-sky-400" />
               <span>Audit Trail Report</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 13. HR & Payroll (Expandable) */}
+      {isMenuEnabled('hr') && (
       <div>
         <button
           type="button"
@@ -1719,6 +1961,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.hr && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('hr', 'employee_master') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'EMPLOYEE_MASTER')}
@@ -1731,6 +1974,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <User className="w-3.5 h-3.5 shrink-0" />
               <span>Employee Master</span>
             </button>
+          )}
+            {isSubmenuEnabled('hr', 'staff_assignment') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'STAFF_ASSIGNMENT')}
@@ -1743,6 +1988,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <UserCheck className="w-3.5 h-3.5 shrink-0" />
               <span>User / Staff Assignment</span>
             </button>
+          )}
+            {isSubmenuEnabled('hr', 'attendance') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'ATTENDANCE')}
@@ -1755,6 +2002,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span>Attendance</span>
             </button>
+          )}
+            {isSubmenuEnabled('hr', 'shift_mgmt') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'SHIFT_MGMT')}
@@ -1767,6 +2016,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Calendar className="w-3.5 h-3.5 shrink-0" />
               <span>Shift Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('hr', 'leave_mgmt') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'LEAVE_MGMT')}
@@ -1779,6 +2030,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Leave Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('hr', 'payroll_processing') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'PAYROLL_PROCESSING')}
@@ -1791,6 +2044,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <DollarSign className="w-3.5 h-3.5 shrink-0" />
               <span>Payroll Processing</span>
             </button>
+          )}
+            {isSubmenuEnabled('hr', 'salary_slip') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'SALARY_SLIP')}
@@ -1803,6 +2058,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Receipt className="w-3.5 h-3.5 shrink-0" />
               <span>Salary Slip</span>
             </button>
+          )}
+            {isSubmenuEnabled('hr', 'payroll_register') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'PAYROLL_REGISTER')}
@@ -1815,6 +2072,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ClipboardList className="w-3.5 h-3.5 shrink-0" />
               <span>Payroll Register</span>
             </button>
+          )}
+            {isSubmenuEnabled('hr', 'hr_reports') && (
             <button
               type="button"
               onClick={() => onNavigate('HR_PAYROLL', 'HR_REPORTS')}
@@ -1827,11 +2086,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <BarChart3 className="w-3.5 h-3.5 shrink-0" />
               <span>HR Reports</span>
             </button>
+          )}
           </div>
         )}
       </div>
+)}
 
       {/* 14. Settings (Expandable) */}
+      {isMenuEnabled('settings') && (
       <div>
         <button
           type="button"
@@ -1855,6 +2117,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {expandedMenus.settings && (
           <div className="pl-3 pr-1 py-1 space-y-0.5 animate-in fade-in duration-150">
+            {isSubmenuEnabled('settings', 'store_profile') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'STORE_PROFILE')}
@@ -1867,6 +2130,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Building2 className="w-3.5 h-3.5 shrink-0" />
               <span>Store Profile</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'company_gst') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'COMPANY_GST')}
@@ -1879,6 +2144,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Receipt className="w-3.5 h-3.5 shrink-0" />
               <span>Company / GST Details</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'user_management') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'USER_MANAGEMENT')}
@@ -1891,6 +2158,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Users className="w-3.5 h-3.5 shrink-0" />
               <span>User Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'role_permissions') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'ROLE_PERMISSIONS')}
@@ -1903,6 +2172,22 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
               <span>Role & Permission Management</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'menu_management') && (
+            <button
+              type="button"
+              onClick={() => onNavigate('SETTINGS', 'MENU_MANAGEMENT')}
+              className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] transition-all cursor-pointer text-left ${
+                currentView === 'SETTINGS' && settingsSubTab === 'MENU_MANAGEMENT'
+                  ? 'bg-[#0084ff] text-white font-semibold shadow-xs'
+                  : 'hover:bg-[#0e2447] text-slate-300 hover:text-white'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5 shrink-0" />
+              <span>Menu & Navigation Management</span>
+            </button>
+          )}
+            {isSubmenuEnabled('settings', 'billing_settings') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'BILLING_SETTINGS')}
@@ -1915,6 +2200,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
               <span>Billing Settings</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'invoice_print') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'INVOICE_PRINT')}
@@ -1927,6 +2214,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileText className="w-3.5 h-3.5 shrink-0" />
               <span>Invoice / Print Format</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'tax_settings') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'TAX_SETTINGS')}
@@ -1939,6 +2228,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
               <span>Tax Settings</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'payment_settings') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'PAYMENT_SETTINGS')}
@@ -1951,6 +2242,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Wallet className="w-3.5 h-3.5 shrink-0" />
               <span>Payment Settings</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'barcode_settings') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'BARCODE_SETTINGS')}
@@ -1963,6 +2256,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Barcode className="w-3.5 h-3.5 shrink-0" />
               <span>Barcode Settings</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'backup') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'BACKUP')}
@@ -1975,6 +2270,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Database className="w-3.5 h-3.5 shrink-0" />
               <span>Backup</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'restore') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'RESTORE')}
@@ -1987,6 +2284,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Restore</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'import_export') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'IMPORT_EXPORT')}
@@ -1999,6 +2298,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Download className="w-3.5 h-3.5 shrink-0" />
               <span>Data Import / Export</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'audit_log') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'AUDIT_LOG')}
@@ -2011,6 +2312,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
               <span>Audit Log</span>
             </button>
+          )}
+            {isSubmenuEnabled('settings', 'theme_settings') && (
             <button
               type="button"
               onClick={() => onNavigate('SETTINGS', 'THEME_SETTINGS')}
@@ -2023,9 +2326,11 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <Settings className="w-3.5 h-3.5 shrink-0" />
               <span>Theme Settings</span>
             </button>
+          )}
           </div>
         )}
-      </div>
+      </div>)}
+
     </nav>
   );
 };

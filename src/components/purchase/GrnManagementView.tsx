@@ -40,8 +40,21 @@ export type GrnTab =
   | 'GRN_REPORT';
 
 export interface GrnManagementViewProps {
-  initialTab?: GrnTab;
+  initialTab?: GrnTab | string;
 }
+
+const normalizeGrnTab = (tab?: string): GrnTab => {
+  if (!tab) return 'GRN_REGISTER';
+  if (tab === 'NEW' || tab === 'NEW_GRN') return 'NEW_GRN';
+  if (tab === 'REGISTER' || tab === 'GRN_REGISTER') return 'GRN_REGISTER';
+  if (tab === 'PENDING' || tab === 'PENDING_GRN') return 'PENDING_GRN';
+  if (tab === 'PARTIAL' || tab === 'PARTIALLY_RECEIVED_GRN') return 'PARTIALLY_RECEIVED_GRN';
+  if (tab === 'MODIFICATION' || tab === 'GRN_MODIFICATION') return 'GRN_MODIFICATION';
+  if (tab === 'CANCELLATION' || tab === 'GRN_CANCELLATION') return 'GRN_CANCELLATION';
+  if (tab === 'COPIES' || tab === 'GRN_COPIES') return 'GRN_COPIES';
+  if (tab === 'REPORT' || tab === 'GRN_REPORT') return 'GRN_REPORT';
+  return 'GRN_REGISTER';
+};
 
 interface GrnItemLine {
   productName: string;
@@ -86,14 +99,18 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
 }) => {
   const { vendors, products, addBatch, inwardStockBatch } = usePharmacy();
 
-  const [activeTab, setActiveTab] = useState<GrnTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<GrnTab>(normalizeGrnTab(initialTab));
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVendorFilter, setSelectedVendorFilter] = useState('ALL');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (initialTab) {
-      setActiveTab(initialTab);
+      const normalized = normalizeGrnTab(initialTab);
+      setActiveTab(normalized);
+      if (initialTab === 'NEW' || initialTab === 'NEW_GRN') {
+        setShowNewGrnModal(true);
+      }
     }
   }, [initialTab]);
 

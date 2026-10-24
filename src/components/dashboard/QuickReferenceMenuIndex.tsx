@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { AppView } from '../../App';
+import { usePharmacy } from '../../context/PharmacyContext';
 
 interface QuickReferenceMenuIndexProps {
   onNavigate: (view: AppView, subtab?: string) => void;
@@ -37,6 +38,7 @@ interface MenuSection {
 }
 
 export const QuickReferenceMenuIndex: React.FC<QuickReferenceMenuIndexProps> = ({ onNavigate }) => {
+  const { isMenuEnabled } = usePharmacy();
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -168,7 +170,22 @@ export const QuickReferenceMenuIndex: React.FC<QuickReferenceMenuIndexProps> = (
     },
   ];
 
+  const sectionToMenuMap: Record<string, string> = {
+    MASTERS: 'masters',
+    SALES: 'pos',
+    SALES_REPORT: 'pos',
+    PURCHASE: 'purchase',
+    ORDERS: 'purchase_order',
+    INVENTORY: 'inventory',
+    REPORTS: 'reports',
+    GST: 'gst',
+  };
+
   const filteredSections = menuSections.filter((sec) => {
+    const parentMenuKey = sectionToMenuMap[sec.id];
+    if (parentMenuKey && !isMenuEnabled(parentMenuKey)) {
+      return false;
+    }
     if (selectedCategory !== 'ALL' && sec.id !== selectedCategory) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();

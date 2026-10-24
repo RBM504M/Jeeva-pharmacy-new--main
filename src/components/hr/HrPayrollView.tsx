@@ -35,8 +35,22 @@ export type HrPayrollTab =
   | 'HR_REPORTS';
 
 export interface HrPayrollViewProps {
-  initialTab?: HrPayrollTab;
+  initialTab?: HrPayrollTab | string;
 }
+
+const normalizeHrTab = (tab?: string): HrPayrollTab => {
+  if (!tab) return 'EMPLOYEE_MASTER';
+  if (tab === 'EMPLOYEE_MASTER') return 'EMPLOYEE_MASTER';
+  if (tab === 'STAFF_ASSIGNMENT' || tab === 'USER_ASSIGNMENT') return 'USER_ASSIGNMENT';
+  if (tab === 'ATTENDANCE') return 'ATTENDANCE';
+  if (tab === 'SHIFT_MGMT' || tab === 'SHIFT_MANAGEMENT') return 'SHIFT_MANAGEMENT';
+  if (tab === 'LEAVE_MGMT' || tab === 'LEAVE_MANAGEMENT') return 'LEAVE_MANAGEMENT';
+  if (tab === 'PAYROLL_PROCESSING') return 'PAYROLL_PROCESSING';
+  if (tab === 'SALARY_SLIP') return 'SALARY_SLIP';
+  if (tab === 'PAYROLL_REGISTER') return 'PAYROLL_REGISTER';
+  if (tab === 'HR_REPORTS') return 'HR_REPORTS';
+  return 'EMPLOYEE_MASTER';
+};
 
 interface Employee {
   id: string;
@@ -61,13 +75,13 @@ export const HrPayrollView: React.FC<HrPayrollViewProps> = ({
 }) => {
   const { currentUser } = usePharmacy();
 
-  const [activeTab, setActiveTab] = useState<HrPayrollTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<HrPayrollTab>(normalizeHrTab(initialTab));
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (initialTab) {
-      setActiveTab(initialTab);
+      setActiveTab(normalizeHrTab(initialTab));
     }
   }, [initialTab]);
 

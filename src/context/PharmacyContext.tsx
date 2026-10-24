@@ -53,6 +53,7 @@ import {
   SEED_PURCHASE_INVOICES,
   SEED_SALES_RETURNS,
 } from '../data/shopAidSeedData';
+import { NavigationConfig, DEFAULT_NAVIGATION_CONFIG } from '../types/navigation';
 
 interface PharmacyContextType {
   products: Product[];
@@ -129,6 +130,16 @@ interface PharmacyContextType {
   findProductByBarcode: (barcode: string) => { product?: Product; activeBatch?: Batch } | null;
   clearAllData: () => void;
   loadDemoSampleData: () => void;
+  navigationConfig: NavigationConfig;
+  updateNavigationConfig: (
+    config: Partial<NavigationConfig> | ((prev: NavigationConfig) => NavigationConfig)
+  ) => void;
+  toggleMenu: (menuId: string, enabled?: boolean) => void;
+  toggleSubmenu: (menuId: string, submenuId: string, enabled?: boolean) => void;
+  setAllMenus: (enabled: boolean) => void;
+  resetNavigationConfigToDefaults: () => void;
+  isMenuEnabled: (menuId: string) => boolean;
+  isSubmenuEnabled: (menuId: string, submenuId: string) => boolean;
 }
 
 const PharmacyContext = createContext<PharmacyContextType | null>(null);
@@ -136,6 +147,7 @@ const PharmacyContext = createContext<PharmacyContextType | null>(null);
 const isTestEnvironment = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
 
 const STORAGE_KEYS = {
+  NAVIGATION_CONFIG: 'jeeva_pharmacy_navigation_config_v1',
   PRINTER: 'jeeva_pharmacy_printer_v1',
   BATCHES: 'jeeva_pharmacy_batches_v1',
   INVOICES: 'jeeva_pharmacy_invoices_v1',
@@ -178,6 +190,60 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return DEFAULT_PRINTER_SETTINGS;
     }
   });
+
+  // Navigation Configuration State (Defaulting to all menus enabled, persisted to localStorage)
+  const [navigationConfig, setNavigationConfig] = useState<NavigationConfig>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.NAVIGATION_CONFIG);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const mergedMenus = { ...DEFAULT_NAVIGATION_CONFIG.menus };
+        if (parsed.menus) {
+          for (const key of Object.keys(mergedMenus)) {
+            if (parsed.menus[key]) {
+              mergedMenus[key] = {
+                ...mergedMenus[key],
+                enabled: parsed.menus[key].isSystemLocked ? true : parsed.menus[key].enabled,
+                submenus: mergedMenus[key].submenus
+                  ? {
+                      ...mergedMenus[key].submenus,
+                      ...(parsed.menus[key].submenus || {}),
+                    }
+                  : undefined,
+              };
+              if (mergedMenus[key].submenus) {
+                for (const subKey of Object.keys(mergedMenus[key].submenus!)) {
+                  if (DEFAULT_NAVIGATION_CONFIG.menus[key]?.submenus?.[subKey]?.isSystemLocked) {
+                    mergedMenus[key].submenus![subKey].enabled = true;
+                  }
+                }
+              }
+            }
+          }
+        }
+        return {
+          ...DEFAULT_NAVIGATION_CONFIG,
+          ...parsed,
+          menus: mergedMenus,
+        };
+      }
+      return DEFAULT_NAVIGATION_CONFIG;
+    } catch {
+      return DEFAULT_NAVIGATION_CONFIG;
+    }
+  });
+
+  // Sync navigation configuration to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.NAVIGATION_CONFIG, JSON.stringify(navigationConfig));
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('navigation_config', navigationConfig);
+      }
+    } catch (e) {
+      console.warn('LocalStorage unavailable for navigation config', e);
+    }
+  }, [navigationConfig]);
 
   // Master Data Collections (Empty clean slate for runtime, seeded for Vitest test suites)
   const [products, setProducts] = useState<Product[]>(() =>
@@ -379,6 +445,123 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setDpdpLogs(SEED_DPDP_LOGS);
     setStockAuditLogs(SEED_STOCK_AUDIT_LOGS);
     setBackupSnapshots(SEED_BACKUP_SNAPSHOTS);
+  };
+
+  // Navigation Configuration Helpers
+  const updateNavigationConfig = (
+    configOrUpdater: Partial<NavigationConfig> | ((prev: NavigationConfig) => NavigationConfig)
+  ) => {
+    setNavigationConfig((prev) => {
+      const next = typeof configOrUpdater === 'function' ? configOrUpdater(prev) : { ...prev, ...configOrUpdater };
+      if (next.menus?.settings) {
+        next.menus.settings.enabled = true;
+        if (next.menus.settings.submenus?.menu_management) {
+          next.menus.settings.submenus.menu_management.enabled = true;
+        }
+      }
+      return {
+        ...next,
+        lastUpdated: new Date().toISOString(),
+      };
+    });
+  };
+
+  const toggleMenu = (menuId: string, enabled?: boolean) => {
+    setNavigationConfig((prev) => {
+      const targetMenu = prev.menus[menuId];
+      if (!targetMenu || targetMenu.isSystemLocked) return prev;
+      const nextEnabled = enabled !== undefined ? enabled : !targetMenu.enabled;
+      return {
+        ...prev,
+        lastUpdated: new Date().toISOString(),
+        menus: {
+          ...prev.menus,
+          [menuId]: {
+            ...targetMenu,
+            enabled: nextEnabled,
+          },
+        },
+      };
+    });
+  };
+
+  const toggleSubmenu = (menuId: string, submenuId: string, enabled?: boolean) => {
+    setNavigationConfig((prev) => {
+      const targetMenu = prev.menus[menuId];
+      if (!targetMenu || !targetMenu.submenus || !targetMenu.submenus[submenuId]) return prev;
+      const targetSubmenu = targetMenu.submenus[submenuId];
+      if (targetSubmenu.isSystemLocked) return prev;
+      const nextEnabled = enabled !== undefined ? enabled : !targetSubmenu.enabled;
+      return {
+        ...prev,
+        lastUpdated: new Date().toISOString(),
+        menus: {
+          ...prev.menus,
+          [menuId]: {
+            ...targetMenu,
+            submenus: {
+              ...targetMenu.submenus,
+              [submenuId]: {
+                ...targetSubmenu,
+                enabled: nextEnabled,
+              },
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const setAllMenus = (enabled: boolean) => {
+    setNavigationConfig((prev) => {
+      const updatedMenus: Record<string, typeof prev.menus[string]> = {};
+      for (const [key, menu] of Object.entries(prev.menus)) {
+        const menuEnabled = menu.isSystemLocked ? true : enabled;
+        let updatedSubmenus = menu.submenus ? ({} as NonNullable<typeof menu.submenus>) : undefined;
+        if (menu.submenus && updatedSubmenus) {
+          for (const [subKey, sub] of Object.entries(menu.submenus)) {
+            updatedSubmenus[subKey] = {
+              ...sub,
+              enabled: sub.isSystemLocked ? true : enabled,
+            };
+          }
+        }
+        updatedMenus[key] = {
+          ...menu,
+          enabled: menuEnabled,
+          submenus: updatedSubmenus,
+        };
+      }
+      return {
+        ...prev,
+        lastUpdated: new Date().toISOString(),
+        menus: updatedMenus,
+      };
+    });
+  };
+
+  const resetNavigationConfigToDefaults = () => {
+    setNavigationConfig(DEFAULT_NAVIGATION_CONFIG);
+    try {
+      localStorage.setItem(STORAGE_KEYS.NAVIGATION_CONFIG, JSON.stringify(DEFAULT_NAVIGATION_CONFIG));
+    } catch (e) {
+      console.warn('LocalStorage save failed on reset:', e);
+    }
+  };
+
+  const isMenuEnabled = (menuId: string): boolean => {
+    const menu = navigationConfig.menus[menuId];
+    if (!menu) return true;
+    return menu.enabled;
+  };
+
+  const isSubmenuEnabled = (menuId: string, submenuId: string): boolean => {
+    const menu = navigationConfig.menus[menuId];
+    if (!menu || !menu.enabled) return false;
+    if (!menu.submenus) return true;
+    const submenu = menu.submenus[submenuId];
+    if (!submenu) return true;
+    return submenu.enabled;
   };
 
   const updateBackupConfig = (newCfg: Partial<AutomatedBackupConfig>) => {
@@ -1623,6 +1806,14 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         findProductByBarcode,
         clearAllData,
         loadDemoSampleData,
+        navigationConfig,
+        updateNavigationConfig,
+        toggleMenu,
+        toggleSubmenu,
+        setAllMenus,
+        resetNavigationConfigToDefaults,
+        isMenuEnabled,
+        isSubmenuEnabled,
       }}
     >
       {children}

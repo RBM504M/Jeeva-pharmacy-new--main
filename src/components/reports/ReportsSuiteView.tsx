@@ -716,15 +716,15 @@ export const ReportsSuiteView: React.FC<ReportsSuiteViewProps> = ({ initialTab =
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
-                {activeReportTab === 'COLLECTION'
+                {(activeReportTab === 'COLLECTION' || activeReportTab === 'DAILY_COLLECTION')
                   ? 'Daily Collection & Counter Cash Summary'
                   : activeReportTab === 'PRODUCT_SALES'
                   ? 'Product-wise Sales & Volume Report'
                   : activeReportTab === 'SUPPLIER_PURCHASE'
                   ? 'Supplier-wise Inward Purchase Report'
-                  : activeReportTab === 'MARGIN'
+                  : (activeReportTab === 'MARGIN' || activeReportTab === 'PROFIT_MARGIN')
                   ? 'Gross Profit & Commercial Margin Report'
-                  : activeReportTab === 'VALUATION'
+                  : (activeReportTab === 'VALUATION' || activeReportTab === 'STOCK_VALUATION')
                   ? 'Stock Valuation Report (Cost vs MRP)'
                   : activeReportTab === 'PURCHASE_REGISTER'
                   ? 'Comprehensive Purchase Inward Register'
@@ -732,7 +732,7 @@ export const ReportsSuiteView: React.FC<ReportsSuiteViewProps> = ({ initialTab =
                   ? 'Statutory Outward Sales Register'
                   : activeReportTab === 'RETURNS_REGISTER'
                   ? 'Sales & Purchase Returns Register'
-                  : activeReportTab === 'CANCELLED'
+                  : (activeReportTab === 'CANCELLED' || activeReportTab === 'CANCELLED_TXN')
                   ? 'Cancelled Transactions & Void Audit Report'
                   : 'Statutory System Audit Trail Report'}
               </h2>

@@ -38,8 +38,22 @@ export type BatchTraceTab =
   | 'TRACEABILITY_REPORT';
 
 export interface BatchTraceabilityViewProps {
-  initialTab?: BatchTraceTab;
+  initialTab?: BatchTraceTab | string;
 }
+
+const normalizeBatchTab = (tab?: string): BatchTraceTab => {
+  if (!tab) return 'BATCH_REGISTER';
+  if (tab === 'REGISTER' || tab === 'BATCH_REGISTER') return 'BATCH_REGISTER';
+  if (tab === 'STOCK' || tab === 'BATCH_STOCK') return 'BATCH_STOCK';
+  if (tab === 'MOVEMENT' || tab === 'MOVEMENT_HISTORY') return 'MOVEMENT_HISTORY';
+  if (tab === 'TRACEABILITY' || tab === 'SUPPLIER_TRACE') return 'SUPPLIER_TRACE';
+  if (tab === 'QUALITY' || tab === 'QUALITY_CHECK') return 'QUALITY_CHECK';
+  if (tab === 'QUARANTINE' || tab === 'QUARANTINE_HOLD') return 'QUARANTINE_HOLD';
+  if (tab === 'RECALL' || tab === 'RECALL_MANAGEMENT') return 'RECALL_MANAGEMENT';
+  if (tab === 'DAMAGED' || tab === 'DAMAGED_STOCK') return 'DAMAGED_STOCK';
+  if (tab === 'REPORT' || tab === 'TRACEABILITY_REPORT') return 'TRACEABILITY_REPORT';
+  return 'BATCH_REGISTER';
+};
 
 interface RecallNotice {
   id: string;
@@ -70,14 +84,14 @@ export const BatchTraceabilityView: React.FC<BatchTraceabilityViewProps> = ({
 }) => {
   const { batches, products, vendors, invoices, currentUser } = usePharmacy();
 
-  const [activeTab, setActiveTab] = useState<BatchTraceTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<BatchTraceTab>(normalizeBatchTab(initialTab));
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('ALL');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (initialTab) {
-      setActiveTab(initialTab);
+      setActiveTab(normalizeBatchTab(initialTab));
     }
   }, [initialTab]);
 

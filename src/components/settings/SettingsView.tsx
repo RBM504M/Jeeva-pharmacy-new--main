@@ -22,12 +22,14 @@ import {
 } from 'lucide-react';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { AutomatedBackupConfigView } from './AutomatedBackupConfigView';
+import { MenuManagementConfigView } from './MenuManagementConfigView';
 
 export type SettingsTab =
   | 'STORE_PROFILE'
   | 'COMPANY_GST'
   | 'USER_MANAGEMENT'
   | 'ROLE_PERMISSIONS'
+  | 'MENU_MANAGEMENT'
   | 'BILLING_SETTINGS'
   | 'INVOICE_PRINT'
   | 'TAX_SETTINGS'
@@ -102,6 +104,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           { id: 'COMPANY_GST', label: 'Company / GST Details' },
           { id: 'USER_MANAGEMENT', label: 'User Management' },
           { id: 'ROLE_PERMISSIONS', label: 'Role & Permissions' },
+          { id: 'MENU_MANAGEMENT', label: 'Menu & Navigation' },
           { id: 'BILLING_SETTINGS', label: 'Billing Settings' },
           { id: 'INVOICE_PRINT', label: 'Invoice / Print Format' },
           { id: 'TAX_SETTINGS', label: 'Tax Settings' },
@@ -351,6 +354,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
       )}
+
+      {activeTab === 'MENU_MANAGEMENT' && <MenuManagementConfigView />}
 
       {activeTab === 'BILLING_SETTINGS' && (
         <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs space-y-4 text-xs">
