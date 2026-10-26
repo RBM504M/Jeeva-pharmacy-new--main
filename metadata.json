@@ -1,5 +1,5 @@
 {
-  "name": "Jeeva Pharmacy — Indian Retail Pharmacy Management & POS System",
+  "name": "Pristine — Indian Retail Pharmacy Management & POS System",
   "description": "Enterprise pharmacy management application for Indian retail chemists. Features automated GST, HSN tracking, dual-unit fractional stock, hardware barcode scanner support, and dual-mode thermal/laser printing.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

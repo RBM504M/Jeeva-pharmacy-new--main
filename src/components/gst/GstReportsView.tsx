@@ -42,7 +42,7 @@ export interface GstReportsViewProps {
 export const GstReportsView: React.FC<GstReportsViewProps> = ({
   initialTab = 'OUTPUT_REGISTER',
 }) => {
-  const { invoices, purchaseInvoices, products, currentUser } = usePharmacy();
+  const { invoices, purchaseInvoices, products, vendors, currentUser } = usePharmacy();
 
   const [fromDate, setFromDate] = useState<string>('01-10-2026');
   const [toDate, setToDate] = useState<string>('12-10-2026');
@@ -96,129 +96,96 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
     setTimeout(() => setExportNotice(null), 3000);
   };
 
-  // Sample data rows matching Image 4
-  const gstInputSampleRows = [
-    {
-      idx: 1,
-      date: '02-10-2026',
-      voucherNo: 'PUR-000245',
-      supplier: 'Medico Distributors',
-      gstin: '33AACM1234B1Z1',
-      hsn: '30049099',
-      taxable: 25000.0,
-      cgst: 2250.0,
-      sgst: 2250.0,
-      igst: 0.0,
-      cess: 0.0,
-      totalTax: 4500.0,
-      total: 29500.0,
-    },
-    {
-      idx: 2,
-      date: '03-10-2026',
-      voucherNo: 'PUR-000246',
-      supplier: 'Sri Pharma',
-      gstin: '33BBCD5678C1Z2',
-      hsn: '30042019',
-      taxable: 48000.0,
-      cgst: 4320.0,
-      sgst: 4320.0,
-      igst: 0.0,
-      cess: 0.0,
-      totalTax: 8640.0,
-      total: 56640.0,
-    },
-    {
-      idx: 3,
-      date: '05-10-2026',
-      voucherNo: 'PUR-000247',
-      supplier: 'Global Healthcare',
-      gstin: '29AACG7890D1Z5',
-      hsn: '30045090',
-      taxable: 32500.0,
-      cgst: 2925.0,
-      sgst: 2925.0,
-      igst: 0.0,
-      cess: 0.0,
-      totalTax: 5850.0,
-      total: 38350.0,
-    },
-    {
-      idx: 4,
-      date: '06-10-2026',
-      voucherNo: 'PUR-000248',
-      supplier: 'RR Medicals',
-      gstin: '33AAAFR1122E1Z8',
-      hsn: '30049099',
-      taxable: 18750.0,
-      cgst: 1687.5,
-      sgst: 1687.5,
-      igst: 0.0,
-      cess: 0.0,
-      totalTax: 3375.0,
-      total: 22125.0,
-    },
-    {
-      idx: 5,
-      date: '08-10-2026',
-      voucherNo: 'PUR-000249',
-      supplier: 'Apex Surgicals',
-      gstin: '33ACPA3344F1Z7',
-      hsn: '90189099',
-      taxable: 65000.0,
-      cgst: 5850.0,
-      sgst: 5850.0,
-      igst: 0.0,
-      cess: 0.0,
-      totalTax: 11700.0,
-      total: 76700.0,
-    },
-    {
-      idx: 6,
-      date: '10-10-2026',
-      voucherNo: 'PUR-000250',
-      supplier: 'United Pharma',
-      gstin: '27AAACU5566G1Z9',
-      hsn: '30041090',
-      taxable: 42000.0,
-      cgst: 3780.0,
-      sgst: 3780.0,
-      igst: 0.0,
-      cess: 0.0,
-      totalTax: 7560.0,
-      total: 49560.0,
-    },
-    {
-      idx: 7,
-      date: '11-10-2026',
-      voucherNo: 'PUR-000251',
-      supplier: 'Life Care Distributors',
-      gstin: '33AACL7788H1Z2',
-      hsn: '30049099',
-      taxable: 12800.0,
-      cgst: 1152.0,
-      sgst: 1152.0,
-      igst: 0.0,
-      cess: 0.0,
-      totalTax: 2304.0,
-      total: 15104.0,
-    },
-    {
-      idx: 8,
-      date: '12-10-2026',
-      voucherNo: 'PUR-000252',
-      supplier: 'Sun Pharma Stockist',
-      gstin: '36AAACS9999J1Z5',
-      hsn: '30045020',
-      taxable: 28250.0,
-      cgst: 2542.5,
-      sgst: 2542.5,
-      igst: 0.0,
-      cess: 0.0,
-      totalTax: 5085.0,
-      total: 33335.0,
-    },
-  ];
+  // Dynamic GST report rows computed from actual operational data
+  const gstReportRows = useMemo(() => {
+    const isOutward =
+      activeReportName.includes('Sales') ||
+      activeReportName.includes('Output') ||
+      activeReportName.includes('GSTR-1');
+
+    if (isOutward) {
+      return (invoices || [])
+        .filter((inv) => inv.status === 'COMPLETED')
+        .map((inv, idx) => {
+          const d = inv.invoiceDate ? new Date(inv.invoiceDate) : new Date();
+          const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+          const cgst = inv.totalCgst || 0;
+          const sgst = inv.totalSgst || 0;
+          const igst = inv.totalIgst || 0;
+          const totalTax = cgst + sgst + igst;
+          const taxable = inv.subtotal || Math.max(0, inv.grandTotal - totalTax);
+          return {
+            idx: idx + 1,
+            date: dateStr,
+            voucherNo: inv.invoiceNumber || `SLS-${String(idx + 1).padStart(5, '0')}`,
+            supplier: inv.prescription?.patientName || inv.customerName || 'Retail Customer (B2C)',
+            gstin: (inv as any).customerGstin || 'URP (Unregistered)',
+            hsn: '30049099',
+            taxable,
+            cgst,
+            sgst,
+            igst,
+            cess: 0,
+            totalTax,
+            total: inv.grandTotal,
+          };
+        });
+    }
+
+    // Default to Inward / Purchase GST records
+    return (purchaseInvoices || []).map((pinv, idx) => {
+      const d = pinv.invoiceDate ? new Date(pinv.invoiceDate) : new Date();
+      const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+      const tax = (pinv.cgstTotal || 0) + (pinv.sgstTotal || 0) + (pinv.igstTotal || 0);
+      const taxable = pinv.taxableTotal || Math.max(0, pinv.grandTotal - tax);
+      const matchedVendor = vendors?.find((v) => v.id === pinv.vendorId);
+      return {
+        idx: idx + 1,
+        date: dateStr,
+        voucherNo: pinv.vendorInvoiceNo || pinv.grnNumber || `PUR-${String(idx + 1).padStart(5, '0')}`,
+        supplier: pinv.vendorName || matchedVendor?.companyName || 'Pharmaceutical Wholesaler',
+        gstin: matchedVendor?.gstin || '33AAAAA0000A1Z5',
+        hsn: '30049099',
+        taxable,
+        cgst: pinv.cgstTotal || Number((tax / 2).toFixed(2)),
+        sgst: pinv.sgstTotal || Number((tax / 2).toFixed(2)),
+        igst: pinv.igstTotal || 0,
+        cess: 0,
+        totalTax: tax,
+        total: pinv.grandTotal,
+      };
+    });
+  }, [invoices, purchaseInvoices, vendors, activeReportName]);
+
+  const kpis = useMemo(() => {
+    let taxablePurchases = 0;
+    let itc = 0;
+    (purchaseInvoices || []).forEach((p) => {
+      const tax = (p.cgstTotal || 0) + (p.sgstTotal || 0) + (p.igstTotal || 0);
+      taxablePurchases += p.taxableTotal || Math.max(0, p.grandTotal - tax);
+      itc += tax;
+    });
+
+    let taxableSales = 0;
+    let outputTax = 0;
+    (invoices || []).filter((i) => i.status === 'COMPLETED').forEach((inv) => {
+      const tax = (inv.totalCgst || 0) + (inv.totalSgst || 0) + (inv.totalIgst || 0);
+      taxableSales += inv.subtotal || (inv.grandTotal - tax);
+      outputTax += tax;
+    });
+
+    const netPayable = Math.max(0, outputTax - itc);
+
+    return {
+      taxablePurchases,
+      purchaseCount: (purchaseInvoices || []).length,
+      taxableSales,
+      salesCount: (invoices || []).filter((i) => i.status === 'COMPLETED').length,
+      itc,
+      outputTax,
+      netPayable,
+    };
+  }, [purchaseInvoices, invoices]);
 
   // 12 Feature Tiles matching Image 4
   const gstTiles = [
@@ -309,8 +276,8 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
   ];
 
   const handleExportCsv = () => {
-    const headers = 'Sl No,Date,Voucher No,Supplier,GSTIN,HSN,Taxable,CGST,SGST,IGST,CESS,Total Tax,Invoice Total\n';
-    const csvRows = gstInputSampleRows
+    const headers = 'Sl No,Date,Voucher No,Party / Supplier,GSTIN,HSN,Taxable,CGST,SGST,IGST,CESS,Total Tax,Invoice Total\n';
+    const csvRows = gstReportRows
       .map(
         (r) =>
           `${r.idx},${r.date},${r.voucherNo},"${r.supplier}",${r.gstin},${r.hsn},${r.taxable},${r.cgst},${r.sgst},${r.igst},${r.cess},${r.totalTax},${r.total}`
@@ -320,10 +287,10 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `GST_Input_Register_${taxPeriod.replace(/\s+/g, '_')}.csv`;
+    link.download = `GST_Register_${taxPeriod.replace(/\s+/g, '_')}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    showToast('✓ Successfully exported GST Input Register to CSV');
+    showToast('✓ Successfully exported GST Register to CSV');
   };
 
   return (
@@ -491,8 +458,8 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
           </div>
           <div>
             <div className="text-[11px] text-slate-500 font-medium">Taxable Purchases</div>
-            <div className="text-base font-extrabold text-slate-900 font-mono">₹ 4,85,320</div>
-            <div className="text-[10px] text-slate-400">Invoices: 42</div>
+            <div className="text-base font-extrabold text-slate-900 font-mono">₹ {kpis.taxablePurchases.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-[10px] text-slate-400">Invoices: {kpis.purchaseCount}</div>
           </div>
         </div>
 
@@ -503,8 +470,8 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
           </div>
           <div>
             <div className="text-[11px] text-slate-500 font-medium">Taxable Sales</div>
-            <div className="text-base font-extrabold text-slate-900 font-mono">₹ 5,72,650</div>
-            <div className="text-[10px] text-slate-400">Invoices: 68</div>
+            <div className="text-base font-extrabold text-slate-900 font-mono">₹ {kpis.taxableSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-[10px] text-slate-400">Invoices: {kpis.salesCount}</div>
           </div>
         </div>
 
@@ -515,7 +482,7 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
           </div>
           <div>
             <div className="text-[11px] text-slate-500 font-medium">Input Tax Credit (ITC)</div>
-            <div className="text-base font-extrabold text-slate-900 font-mono">₹ 61,420</div>
+            <div className="text-base font-extrabold text-slate-900 font-mono">₹ {kpis.itc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
         </div>
 
@@ -526,7 +493,7 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
           </div>
           <div>
             <div className="text-[11px] text-slate-500 font-medium">Output Tax</div>
-            <div className="text-base font-extrabold text-slate-900 font-mono">₹ 72,830</div>
+            <div className="text-base font-extrabold text-slate-900 font-mono">₹ {kpis.outputTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
           </div>
         </div>
 
@@ -537,7 +504,7 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
           </div>
           <div>
             <div className="text-[11px] text-slate-500 font-medium">Net GST Payable</div>
-            <div className="text-base font-extrabold text-rose-600 font-mono">₹ 11,410</div>
+            <div className="text-base font-extrabold text-rose-600 font-mono">₹ {kpis.netPayable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             <div className="text-[10px] text-slate-400">Output - Input</div>
           </div>
         </div>
@@ -548,7 +515,7 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-2">
           <div className="flex items-center gap-2 text-xs font-bold text-[#0066cc]">
             <FileText className="w-4 h-4 text-[#0066cc]" />
-            <span>{activeReportName} (Sample Data)</span>
+            <span>{activeReportName}</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -600,7 +567,7 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {gstInputSampleRows.map((row) => (
+              {gstReportRows.map((row) => (
                 <tr key={row.idx} className="hover:bg-sky-50/20 transition-colors">
                   <td className="py-1.5 px-1 text-center font-semibold text-slate-500">{row.idx}</td>
                   <td className="py-1.5 px-2 font-mono">{row.date}</td>
@@ -617,31 +584,30 @@ export const GstReportsView: React.FC<GstReportsViewProps> = ({
                   <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900">{row.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                 </tr>
               ))}
+              {gstReportRows.length === 0 && (
+                <tr>
+                  <td colSpan={13} className="py-12 text-center text-slate-500">
+                    <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <p className="font-semibold text-slate-700 text-sm">No GST Records for {activeReportName}</p>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      Transactions recorded via Purchase Entries and Retail POS sales will calculate here automatically.
+                    </p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Pagination matching Image 4 */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
-          <div>Showing 1 to 8 of 42 entries (Sample Data)</div>
+          <div>Showing 1 to {gstReportRows.length} of {gstReportRows.length} entries</div>
           <div className="flex items-center gap-1">
             <button type="button" className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 text-slate-600">
               &lt;
             </button>
             <button type="button" className="px-2.5 py-1 rounded bg-[#0084ff] text-white font-bold">
               1
-            </button>
-            <button type="button" className="px-2 py-1 rounded hover:bg-slate-100 text-slate-600">
-              2
-            </button>
-            <button type="button" className="px-2 py-1 rounded hover:bg-slate-100 text-slate-600">
-              3
-            </button>
-            <button type="button" className="px-2 py-1 rounded hover:bg-slate-100 text-slate-600">
-              4
-            </button>
-            <button type="button" className="px-2 py-1 rounded hover:bg-slate-100 text-slate-600">
-              5
             </button>
             <button type="button" className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 text-slate-600">
               &gt;

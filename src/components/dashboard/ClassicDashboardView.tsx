@@ -72,92 +72,72 @@ export const ClassicDashboardView: React.FC<ClassicDashboardViewProps> = ({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // 1. Calculate dynamic KPI values from database (with sensible defaults matching design)
-  const isTestEnv = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+  // 1. Calculate dynamic KPI values from database
   const today = new Date().toISOString().split('T')[0];
   const todaysInvoices = useMemo(() => {
     return invoices.filter((inv) => inv.status === 'COMPLETED' && inv.invoiceDate.startsWith(today));
   }, [invoices, today]);
 
   const todaySalesTotal = useMemo(() => {
-    const sum = todaysInvoices.reduce((acc, inv) => acc + inv.grandTotal, 0);
-    return sum > 0 ? sum : (isTestEnv ? 8650 : 0);
+    return todaysInvoices.reduce((acc, inv) => acc + inv.grandTotal, 0);
   }, [todaysInvoices]);
 
   const cashCollectionTotal = useMemo(() => {
-    const cash = todaysInvoices
+    return todaysInvoices
       .filter((inv) => inv.paymentMethod === 'CASH')
       .reduce((acc, inv) => acc + inv.grandTotal, 0);
-    return cash > 0 ? cash : (isTestEnv ? 5420 : 0);
   }, [todaysInvoices]);
 
   const upiCollectionTotal = useMemo(() => {
-    const upi = todaysInvoices
+    return todaysInvoices
       .filter((inv) => inv.paymentMethod === 'UPI')
       .reduce((acc, inv) => acc + inv.grandTotal, 0);
-    return upi > 0 ? upi : (isTestEnv ? 2730 : 0);
   }, [todaysInvoices]);
 
   const totalStockValue = useMemo(() => {
-    const total = batches.reduce((acc, b) => {
+    return batches.reduce((acc, b) => {
       const prod = products.find((p) => p.id === b.productId);
       const stripSize = prod?.stripSize || 10;
       return acc + (b.mrpPerStrip / stripSize) * b.totalTablets;
     }, 0);
-    return total > 0 ? total : (isTestEnv ? 125480 : 0);
   }, [batches, products]);
 
   const lowStockCount = useMemo(() => {
-    const count = batches.filter((b) => {
+    return batches.filter((b) => {
       const prod = products.find((p) => p.id === b.productId);
       return b.totalTablets <= (prod?.reorderLevelUnits || 50);
     }).length;
-    return count > 0 ? count : (isTestEnv ? 12 : 0);
   }, [batches, products]);
 
   const nearExpiryCount = useMemo(() => {
-    const count = batches.filter((b) => {
+    return batches.filter((b) => {
       const zone = calculateExpiryZone(b.expiryDate).zone;
       return zone === 'CRITICAL_30' || zone === 'WARNING_60';
     }).length;
-    return count > 0 ? count : (isTestEnv ? 8 : 0);
   }, [batches]);
 
-  // 2. Recent Sales rows (sorted latest first, fallbacks matching screenshot)
+  // 2. Recent Sales rows (sorted latest first from live invoices)
   const displayRecentSales = useMemo(() => {
-    if (invoices.length >= 3) {
-      return invoices.slice(0, 5).map((inv, idx) => ({
-        billNo: inv.invoiceNumber || `S000${46 - idx}`,
-        dateTime: inv.invoiceDate
-          ? new Date(inv.invoiceDate).toLocaleString('en-IN', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })
-          : '26 Apr 2025 02:45 PM',
-        patient: inv.prescription?.patientName || 'Walk-in Customer',
-        amount: inv.grandTotal,
-        payment: inv.paymentMethod || 'UPI',
-      }));
-    }
-    // Provide sample rows only in Vitest test environment to satisfy unit tests
-    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') {
-      return [
-        { billNo: 'S00046', dateTime: '26 Apr 2025 02:45 PM', patient: 'Ramesh Kumar', amount: 520, payment: 'UPI' },
-        { billNo: 'S00044', dateTime: '26 Apr 2025 01:20 PM', patient: 'Lakshmi Devi', amount: 310, payment: 'Cash' },
-        { billNo: 'S00043', dateTime: '26 Apr 2025 12:10 PM', patient: 'Suresh Patel', amount: 980, payment: 'UPI' },
-        { billNo: 'S00042', dateTime: '26 Apr 2025 11:05 AM', patient: 'Priya Nair', amount: 640, payment: 'Cash' },
-        { billNo: 'S00041', dateTime: '26 Apr 2025 10:30 AM', patient: 'Anil Sharma', amount: 415, payment: 'UPI' },
-      ];
-    }
-    return [];
+    return invoices.slice(0, 5).map((inv, idx) => ({
+      billNo: inv.invoiceNumber || `S000${46 - idx}`,
+      dateTime: inv.invoiceDate
+        ? new Date(inv.invoiceDate).toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+        : '26 Apr 2025 02:45 PM',
+      patient: inv.prescription?.patientName || 'Walk-in Customer',
+      amount: inv.grandTotal,
+      payment: inv.paymentMethod || 'UPI',
+    }));
   }, [invoices]);
 
-  // 3. Near Expiry rows (sorted by nearest expiry)
+  // 3. Near Expiry rows (sorted by nearest expiry from live inventory)
   const displayNearExpiry = useMemo(() => {
-    const liveItems = batches
+    return batches
       .map((b) => {
         const prod = products.find((p) => p.id === b.productId);
         const exp = calculateExpiryZone(b.expiryDate);
@@ -172,23 +152,8 @@ export const ClassicDashboardView: React.FC<ClassicDashboardViewProps> = ({
           daysLeft: exp.days,
         };
       })
-      .sort((a, b) => a.daysLeft - b.daysLeft);
-
-    if (liveItems.length > 0) {
-      return liveItems.slice(0, 5);
-    }
-
-    // Provide sample rows only in Vitest test environment to satisfy unit tests
-    if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') {
-      return [
-        { medicineName: 'Amoxicillin 500mg', batchNo: 'B1234', expiryDate: '15 May 2025', daysLeft: 19 },
-        { medicineName: 'Paracetamol 650mg', batchNo: 'C5678', expiryDate: '20 May 2025', daysLeft: 24 },
-        { medicineName: 'Vitamin D3 1000IU', batchNo: 'D9012', expiryDate: '28 May 2025', daysLeft: 32 },
-        { medicineName: 'Metformin 500mg', batchNo: 'E3456', expiryDate: '10 Jun 2025', daysLeft: 45 },
-        { medicineName: 'Cetirizine 10mg', batchNo: 'F7890', expiryDate: '18 Jun 2025', daysLeft: 53 },
-      ];
-    }
-    return [];
+      .sort((a, b) => a.daysLeft - b.daysLeft)
+      .slice(0, 5);
   }, [batches, products]);
 
   // Helper for Days Left badge color

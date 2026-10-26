@@ -13,14 +13,14 @@ import {
 } from '../types/pharmacy';
 
 export const DEFAULT_USER_PROFILE: UserProfile = {
-  id: 'usr_admin_01',
-  name: 'K. Balasubramanian, B.Pharm',
-  email: 'pharmacist@jeevapharmacy.in',
-  phone: '+91 98401 23456',
-  role: 'ADMIN',
-  storeName: 'Jeeva Pharmacy',
-  dlNumber: 'DL-TN-2024-8849 (Form 20/21)',
-  gstin: '33AAAAA0000A1Z5',
+  id: '',
+  name: '',
+  email: '',
+  phone: '',
+  role: 'CASHIER',
+  storeName: '',
+  dlNumber: '',
+  gstin: '',
 };
 
 export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {

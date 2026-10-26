@@ -19,10 +19,17 @@ import {
   Activity,
   Palette,
   CheckCircle2,
+  Check,
+  Sun,
+  Moon,
+  Sparkles,
+  Monitor,
 } from 'lucide-react';
 import { usePharmacy } from '../../context/PharmacyContext';
+import { ThemeId } from '../../types/theme';
 import { AutomatedBackupConfigView } from './AutomatedBackupConfigView';
 import { MenuManagementConfigView } from './MenuManagementConfigView';
+import { UserManagementView } from '../auth/UserManagementView';
 
 export type SettingsTab =
   | 'STORE_PROFILE'
@@ -48,9 +55,53 @@ export interface SettingsViewProps {
 export const SettingsView: React.FC<SettingsViewProps> = ({
   initialTab = 'STORE_PROFILE',
 }) => {
-  const { printerSettings, updatePrinterSettings, currentUser, switchUserRole, clearAllData, loadDemoSampleData } = usePharmacy();
+  const {
+    pharmacyAccount,
+    printerSettings,
+    updatePrinterSettings,
+    currentUser,
+    switchUserRole,
+    clearAllData,
+    currentThemeId,
+    theme,
+    setTheme,
+    availableThemes,
+  } = usePharmacy();
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Pharmacist Display Preferences
+  const [compactRows, setCompactRows] = useState(() => {
+    try {
+      return localStorage.getItem('jeeva_compact_rows') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [showGenericInPos, setShowGenericInPos] = useState(() => {
+    try {
+      const v = localStorage.getItem('jeeva_show_generic');
+      return v === null ? true : v === 'true';
+    } catch {
+      return true;
+    }
+  });
+  const [highlightScheduleH, setHighlightScheduleH] = useState(() => {
+    try {
+      const v = localStorage.getItem('jeeva_highlight_schedule');
+      return v === null ? true : v === 'true';
+    } catch {
+      return true;
+    }
+  });
+  const [audioScanBeep, setAudioScanBeep] = useState(() => {
+    try {
+      const v = localStorage.getItem('jeeva_audio_scan');
+      return v === null ? true : v === 'true';
+    } catch {
+      return true;
+    }
+  });
 
   React.useEffect(() => {
     if (initialTab) {
@@ -63,19 +114,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Store Profile Form State
-  const [storeName, setStoreName] = useState('Jeeva Medicals');
-  const [storeBranch, setStoreBranch] = useState('Tiruppur Rural Unit');
-  const [storePhone, setStorePhone] = useState('+91 98422 11099');
-  const [storeEmail, setStoreEmail] = useState('care@jeevamedicals.com');
-  const [storeAddress, setStoreAddress] = useState('14/2, Kangeyam Main Road, Nallur, Tiruppur, Tamil Nadu 641606');
+  // Store Profile Form State (Bound to real pharmacy account or empty)
+  const [storeName, setStoreName] = useState(() => pharmacyAccount?.name || currentUser.storeName || '');
+  const [storeBranch, setStoreBranch] = useState('');
+  const [storePhone, setStorePhone] = useState(() => pharmacyAccount?.phone || currentUser.phone || '');
+  const [storeEmail, setStoreEmail] = useState(() => pharmacyAccount?.email || currentUser.email || '');
+  const [storeAddress, setStoreAddress] = useState(() => pharmacyAccount?.address || '');
 
   // Company GST & Drug License Details
-  const [gstin, setGstin] = useState('33AAAAJ9921M1Z4');
-  const [pan, setPan] = useState('AAAAJ9921M');
-  const [dl20B, setDl20B] = useState('TN/TPR/20B/008492');
-  const [dl21B, setDl21B] = useState('TN/TPR/21B/008493');
-  const [fssaiNo, setFssaiNo] = useState('12423999000142');
+  const [gstin, setGstin] = useState(() => pharmacyAccount?.gstin || currentUser.gstin || '');
+  const [pan, setPan] = useState('');
+  const [dl20B, setDl20B] = useState(() => pharmacyAccount?.dlNumber || currentUser.dlNumber || '');
+  const [dl21B, setDl21B] = useState('');
+  const [fssaiNo, setFssaiNo] = useState('');
+
+  // Keep state synced if pharmacyAccount changes
+  React.useEffect(() => {
+    if (pharmacyAccount) {
+      if (pharmacyAccount.name) setStoreName(pharmacyAccount.name);
+      if (pharmacyAccount.phone) setStorePhone(pharmacyAccount.phone);
+      if (pharmacyAccount.email) setStoreEmail(pharmacyAccount.email);
+      if (pharmacyAccount.gstin) setGstin(pharmacyAccount.gstin);
+      if (pharmacyAccount.dlNumber) setDl20B(pharmacyAccount.dlNumber);
+      if (pharmacyAccount.address) setStoreAddress(pharmacyAccount.address);
+    }
+  }, [pharmacyAccount]);
 
   // Billing Settings
   const [roundOffBills, setRoundOffBills] = useState(true);
@@ -87,6 +150,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [barcodeScannerPrefix, setBarcodeScannerPrefix] = useState('');
   const [barcodeScannerSuffix, setBarcodeScannerSuffix] = useState('Enter');
   const [barcodeLabelFormat, setBarcodeLabelFormat] = useState('38mm x 25mm (2-Across Thermal)');
+
+  const handleSaveStoreProfile = async () => {
+    if (window.electronAPI?.auth?.updatePharmacyProfile && pharmacyAccount) {
+      try {
+        await window.electronAPI.auth.updatePharmacyProfile({
+          name: storeName,
+          phone: storePhone,
+          email: storeEmail,
+          address: storeAddress,
+        });
+      } catch (e) {
+        console.warn('Failed to update pharmacy profile across IPC:', e);
+      }
+    }
+    showToast('✓ Store profile details saved.');
+  };
+
+  const handleSaveCompanyGst = async () => {
+    if (window.electronAPI?.auth?.updatePharmacyProfile && pharmacyAccount) {
+      try {
+        await window.electronAPI.auth.updatePharmacyProfile({
+          gstin,
+          dlNumber: [dl20B, dl21B].filter(Boolean).join(', '),
+        });
+      } catch (e) {
+        console.warn('Failed to update GST/DL across IPC:', e);
+      }
+    }
+    showToast('✓ Statutory tax and license particulars updated.');
+  };
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto">
@@ -187,7 +280,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="flex justify-end pt-2">
             <button
               type="button"
-              onClick={() => showToast('✓ Store profile details saved.')}
+              onClick={handleSaveStoreProfile}
               className="px-4 py-2 bg-[#0084ff] hover:bg-[#0073e6] text-white rounded font-semibold cursor-pointer"
             >
               Save Store Profile
@@ -252,7 +345,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <div className="flex justify-end pt-2">
             <button
               type="button"
-              onClick={() => showToast('✓ Statutory tax and license particulars updated.')}
+              onClick={handleSaveCompanyGst}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-semibold cursor-pointer"
             >
               Update Tax & Licenses
@@ -262,54 +355,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       )}
 
       {activeTab === 'USER_MANAGEMENT' && (
-        <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs space-y-4 text-xs">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-indigo-600" />
-              <h2 className="text-sm font-bold text-slate-900">System Users & Terminal Operators</h2>
-            </div>
-            <button
-              type="button"
-              onClick={() => showToast('Enroll new terminal user modal')}
-              className="px-3 py-1 bg-[#0084ff] text-white rounded text-xs font-semibold cursor-pointer"
-            >
-              + Add User
-            </button>
-          </div>
-          <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="p-2.5">User Name</th>
-                  <th className="p-2.5">Email / Login ID</th>
-                  <th className="p-2.5">Role</th>
-                  <th className="p-2.5">Registered Pharmacist No.</th>
-                  <th className="p-2.5 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                <tr className="hover:bg-slate-50">
-                  <td className="p-2.5 font-bold text-slate-900">{currentUser.name}</td>
-                  <td className="p-2.5 font-mono">{currentUser.email}</td>
-                  <td className="p-2.5 font-bold text-purple-700">{currentUser.role}</td>
-                  <td className="p-2.5 font-mono">{currentUser.dlNumber}</td>
-                  <td className="p-2.5 text-center">
-                    <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">ACTIVE</span>
-                  </td>
-                </tr>
-                <tr className="hover:bg-slate-50">
-                  <td className="p-2.5 font-bold text-slate-900">S. Kausalya Devi</td>
-                  <td className="p-2.5 font-mono">kausalya@jeevamedicals.com</td>
-                  <td className="p-2.5 font-bold text-sky-700">PHARMACY_ASSISTANT</td>
-                  <td className="p-2.5 font-mono">TN-REG-48901</td>
-                  <td className="p-2.5 text-center">
-                    <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">ACTIVE</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <UserManagementView />
       )}
 
       {activeTab === 'ROLE_PERMISSIONS' && (
@@ -534,33 +580,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <div className="p-4 border border-rose-200 rounded-lg bg-rose-50/50 space-y-2 md:col-span-2">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
-                  <span className="font-bold text-rose-900 block">Database Clean Slate & Sample Data Purge</span>
+                  <span className="font-bold text-rose-900 block">Database Reset & Clean Slate</span>
                   <p className="text-rose-700 text-[11px] mt-0.5">
-                    Remove all demo medicines, mock batches, dummy invoices and seed records to start with a fresh pharmacy database.
+                    Clear all operational sales, purchase records, local cache and reset to a clean database state.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm('Are you sure you want to remove ALL sample/mock data? This action will reset your database to a clean empty state.')) {
+                      if (window.confirm('Are you sure you want to reset your database? This will clear all transactions and operational data.')) {
                         clearAllData();
-                        showToast('✓ All sample data removed. Clean database initialized.');
+                        showToast('✓ Database reset to clean empty state.');
                       }
                     }}
                     className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer shadow-xs"
                   >
-                    Clear All Sample Data
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      loadDemoSampleData();
-                      showToast('✓ Sample demonstration catalog and batches loaded.');
-                    }}
-                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded text-xs font-semibold cursor-pointer"
-                  >
-                    Reload Demo Data
+                    Clear All Data
                   </button>
                 </div>
               </div>
@@ -609,18 +645,296 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       )}
 
       {activeTab === 'THEME_SETTINGS' && (
-        <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs space-y-4 text-xs">
-          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <Palette className="w-5 h-5 text-[#0084ff]" />
-            <h2 className="text-sm font-bold text-slate-900">Visual Theme & Display Preferences</h2>
-          </div>
-          <div className="space-y-3">
-            <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg flex items-center justify-between">
-              <div>
-                <span className="font-bold text-sky-900 block">Jeeva Medicals Classic Theme</span>
-                <span className="text-sky-700 text-[11px]">Deep navy sidebar (#071326), sky-blue active accents and high-contrast white tables.</span>
+        <div className="space-y-5 text-xs">
+          {/* Header Banner */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm"
+                  style={{ backgroundColor: theme.colors.accentPrimary }}
+                >
+                  <Palette className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">Visual Theme & Display Preferences</h2>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Personalize your pharmacy terminal aesthetics, contrast levels, and counter display density.
+                  </p>
+                </div>
               </div>
-              <span className="bg-sky-600 text-white px-2 py-0.5 rounded text-[10px] font-bold">Active Theme</span>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <span className="text-[11px] text-slate-500 font-medium">Current Active:</span>
+                <span
+                  className="px-2.5 py-1 rounded-md text-[11px] font-bold shadow-2xs border"
+                  style={{
+                    backgroundColor: theme.colors.badgeBg,
+                    color: theme.colors.badgeText,
+                    borderColor: `${theme.colors.accentPrimary}33`,
+                  }}
+                >
+                  {theme.name}
+                </span>
+              </div>
+            </div>
+
+            {/* 3 Professional Themes Selection Cards */}
+            <div className="mt-5">
+              <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Select From 3 Professional Pharmacy Themes</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {Object.values(availableThemes).map((t) => {
+                  const isActive = currentThemeId === t.id;
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => {
+                        setTheme(t.id);
+                        showToast(`✓ Activated ${t.name}`);
+                      }}
+                      className={`rounded-xl border-2 transition-all p-4 flex flex-col justify-between cursor-pointer relative group ${
+                        isActive
+                          ? 'border-sky-500 shadow-md bg-white ring-2 ring-sky-500/20'
+                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-white shadow-xs'
+                      }`}
+                    >
+                      {/* Active Indicator Ribbon */}
+                      {isActive && (
+                        <div className="absolute -top-2.5 right-3 bg-sky-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-xs flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          <span>Active Theme</span>
+                        </div>
+                      )}
+
+                      <div className="space-y-3">
+                        {/* Mini UI Mockup */}
+                        <div className="w-full h-24 rounded-lg overflow-hidden border border-slate-300/80 shadow-inner flex flex-col">
+                          {/* Mini Header */}
+                          <div
+                            className="h-5 px-2 flex items-center justify-between text-[9px] text-white font-medium"
+                            style={{ backgroundColor: t.colors.headerBg }}
+                          >
+                            <span className="truncate">Jeeva Medicals POS</span>
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.colors.accentPrimary }} />
+                          </div>
+                          {/* Mini Body */}
+                          <div className="flex-1 flex" style={{ backgroundColor: t.colors.workspaceBg }}>
+                            {/* Mini Sidebar */}
+                            <div
+                              className="w-10 p-1 flex flex-col gap-1 border-r"
+                              style={{
+                                backgroundColor: t.colors.sidebarBg,
+                                borderColor: t.colors.sidebarBorder,
+                              }}
+                            >
+                              <div
+                                className="h-2 rounded-[2px]"
+                                style={{ backgroundColor: t.colors.sidebarActiveBg }}
+                              />
+                              <div className="h-1.5 rounded-[2px] bg-white/20" />
+                              <div className="h-1.5 rounded-[2px] bg-white/20" />
+                            </div>
+                            {/* Mini Content Area */}
+                            <div className="flex-1 p-1.5 flex flex-col justify-between">
+                              <div className="space-y-1">
+                                <div className="h-2 w-3/4 rounded bg-slate-200" />
+                                <div className="h-2 w-1/2 rounded bg-slate-200" />
+                              </div>
+                              <div className="flex justify-end">
+                                <div
+                                  className="h-2.5 w-7 rounded-[3px]"
+                                  style={{ backgroundColor: t.colors.accentPrimary }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Title & Tagline */}
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-bold text-slate-900 text-sm">{t.name}</h3>
+                            <span className="text-[10px] font-mono font-semibold text-slate-500">
+                              {t.category}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">{t.tagline}</p>
+                        </div>
+
+                        {/* Description */}
+                        <p className="text-[11px] text-slate-600 leading-relaxed">{t.description}</p>
+
+                        {/* Color Swatches */}
+                        <div>
+                          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                            Color Signature
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {t.colors.swatches.map((color, idx) => (
+                              <span
+                                key={idx}
+                                className="w-5 h-5 rounded-md border border-slate-300 shadow-2xs"
+                                style={{ backgroundColor: color }}
+                                title={color}
+                              />
+                            ))}
+                            <span className="text-[10px] font-medium text-slate-500 ml-1">
+                              {t.accentLabel}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Button */}
+                      <div className="mt-4 pt-3 border-t border-slate-100">
+                        {isActive ? (
+                          <div className="w-full py-1.5 rounded-lg bg-sky-50 text-sky-800 border border-sky-200 text-center font-bold text-xs flex items-center justify-center gap-1.5">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Currently Active</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTheme(t.id);
+                              showToast(`✓ Switched to ${t.name}`);
+                            }}
+                            className="w-full py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 hover:text-slate-900 text-center font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
+                          >
+                            Apply This Theme
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Pharmacist Counter & POS Display Preferences */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+              <Monitor className="w-4 h-4 text-sky-600" />
+              <h3 className="text-sm font-bold text-slate-900">Counter Display & POS Grid Preferences</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Compact Rows */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900 block">Compact Billing Grid (25+ Rows)</span>
+                  <span className="text-slate-500 text-[11px]">
+                    Reduces row padding in POS billing to fit more items on 1366×768 screens without scrolling.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !compactRows;
+                    setCompactRows(next);
+                    localStorage.setItem('jeeva_compact_rows', String(next));
+                    showToast(`✓ Compact rows ${next ? 'enabled' : 'disabled'}`);
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    compactRows ? 'bg-sky-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      compactRows ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Show Generic Salts */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900 block">Show Generic Salt under Brand Name</span>
+                  <span className="text-slate-500 text-[11px]">
+                    Displays salt composition during POS item search to assist with generic medicine substitutions.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !showGenericInPos;
+                    setShowGenericInPos(next);
+                    localStorage.setItem('jeeva_show_generic', String(next));
+                    showToast(`✓ Generic salt display ${next ? 'enabled' : 'disabled'}`);
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    showGenericInPos ? 'bg-sky-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      showGenericInPos ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Schedule H Badges */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900 block">Schedule H / H1 / X Warning Badges</span>
+                  <span className="text-slate-500 text-[11px]">
+                    Highlights prescription-restricted schedules with high-contrast alert badges in POS table.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !highlightScheduleH;
+                    setHighlightScheduleH(next);
+                    localStorage.setItem('jeeva_highlight_schedule', String(next));
+                    showToast(`✓ Schedule warning badges ${next ? 'enabled' : 'disabled'}`);
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    highlightScheduleH ? 'bg-sky-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      highlightScheduleH ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Audio Scan Beep */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900 block">Hardware Barcode Audio Confirmation</span>
+                  <span className="text-slate-500 text-[11px]">
+                    Plays audio confirmation beep whenever a physical barcode scanner detects a product.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !audioScanBeep;
+                    setAudioScanBeep(next);
+                    localStorage.setItem('jeeva_audio_scan', String(next));
+                    showToast(`✓ Barcode audio confirmation ${next ? 'enabled' : 'disabled'}`);
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    audioScanBeep ? 'bg-sky-600' : 'bg-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      audioScanBeep ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           </div>
         </div>

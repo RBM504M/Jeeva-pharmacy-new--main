@@ -6,7 +6,62 @@
  * - Drugs and Cosmetics Act (Schedule H / H1 / OTC)
  */
 
-export type UserRole = 'ADMIN' | 'PHARMACY_ASSISTANT';
+export type UserRole = 'ADMIN' | 'PHARMACIST' | 'CASHIER' | 'PHARMACY_ASSISTANT';
+
+export interface PharmacyAccount {
+  id: string;
+  name: string;               // Store / Pharmacy Name e.g. "Jeeva Pharmacy"
+  dlNumber: string;           // Drug License Number (Form 20/21) e.g. "DL-TN-2024-8849"
+  gstin: string;              // GST Identification Number e.g. "33AAAAA0000A1Z5"
+  address?: string;
+  phone?: string;
+  email?: string;
+  state?: string;
+  pincode?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserRecord {
+  id: string;
+  pharmacyId: string;
+  username: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  role: UserRole;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt?: string | null;
+}
+
+export interface AuthSession {
+  token: string;
+  user: UserRecord;
+  pharmacy: PharmacyAccount;
+  expiresAt: string;
+}
+
+export interface OnboardingPayload {
+  pharmacy: {
+    name: string;
+    dlNumber: string;
+    gstin: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    state?: string;
+    pincode?: string;
+  };
+  adminUser: {
+    fullName: string;
+    username: string;
+    password: string;
+    email?: string;
+    phone?: string;
+  };
+}
 
 export interface UserProfile {
   id: string;
@@ -17,6 +72,8 @@ export interface UserProfile {
   storeName: string;
   dlNumber: string; // Drug License Number e.g. DL-TN-2024-8849
   gstin: string;    // e.g. 33AAAAA0000A1Z5
+  pharmacyId?: string;
+  username?: string;
 }
 
 export type GSTRate = 0 | 5 | 12 | 18 | 28;
@@ -289,12 +346,15 @@ export function formatDualUnitStock(totalTablets: number, stripSize: number, reo
 }
 
 // Calculate Days to Expiry and Zone
-export function calculateExpiryZone(expiryDateStr: string): { days: number; zone: 'CRITICAL_30' | 'WARNING_60' | 'CAUTION_90' | 'SAFE' } {
+export function calculateExpiryZone(expiryDateStr: string): { days: number; zone: 'EXPIRED' | 'CRITICAL_30' | 'WARNING_60' | 'CAUTION_90' | 'SAFE' } {
   const now = new Date();
+  now.setHours(0, 0, 0, 0);
   const expiry = new Date(expiryDateStr);
+  expiry.setHours(0, 0, 0, 0);
   const diffTime = expiry.getTime() - now.getTime();
   const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
+  if (days <= 0) return { days, zone: 'EXPIRED' };
   if (days <= 30) return { days, zone: 'CRITICAL_30' };
   if (days <= 60) return { days, zone: 'WARNING_60' };
   if (days <= 90) return { days, zone: 'CAUTION_90' };

@@ -90,63 +90,11 @@ export const HrPayrollView: React.FC<HrPayrollViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Employees List
-  const [employees, setEmployees] = useState<Employee[]>([
-    {
-      id: 'emp-01',
-      empCode: 'JM-EMP-001',
-      name: 'P. Anand Raj',
-      designation: 'Pharmacist',
-      role: 'ADMIN',
-      mobile: '+91 98402 33119',
-      email: 'anand.raj@jeevamedicals.com',
-      joinedDate: '2022-03-15',
-      shift: 'Morning (08:00 - 16:00)',
-      basicSalary: 24000,
-      hra: 8000,
-      allowances: 3000,
-      pfDeduction: 1800,
-      esiDeduction: 500,
-      status: 'ACTIVE',
-    },
-    {
-      id: 'emp-02',
-      empCode: 'JM-EMP-002',
-      name: 'S. Kausalya Devi',
-      designation: 'Pharmacy Assistant',
-      role: 'PHARMACY_ASSISTANT',
-      mobile: '+91 94441 88290',
-      email: 'kausalya.d@jeevamedicals.com',
-      joinedDate: '2023-07-01',
-      shift: 'Evening (14:00 - 22:00)',
-      basicSalary: 16000,
-      hra: 5000,
-      allowances: 2000,
-      pfDeduction: 1400,
-      esiDeduction: 350,
-      status: 'ACTIVE',
-    },
-    {
-      id: 'emp-03',
-      empCode: 'JM-EMP-003',
-      name: 'V. Ramesh Kumar',
-      designation: 'Delivery Associate',
-      role: 'PHARMACY_ASSISTANT',
-      mobile: '+91 97910 44556',
-      email: 'ramesh.k@jeevamedicals.com',
-      joinedDate: '2024-01-10',
-      shift: 'General (09:00 - 18:00)',
-      basicSalary: 14000,
-      hra: 4000,
-      allowances: 1500,
-      pfDeduction: 1200,
-      esiDeduction: 300,
-      status: 'ACTIVE',
-    },
-  ]);
+  // Employees List (clean state on fresh installation)
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   // Selected Employee for Salary Slip
-  const [selectedSlipEmp, setSelectedSlipEmp] = useState<Employee | null>(employees[0]);
+  const [selectedSlipEmp, setSelectedSlipEmp] = useState<Employee | null>(null);
   const [showAddEmpModal, setShowAddEmpModal] = useState<boolean>(false);
   const [newEmp, setNewEmp] = useState<Omit<Employee, 'id' | 'empCode'>>({
     name: '',
@@ -541,6 +489,24 @@ export const HrPayrollView: React.FC<HrPayrollViewProps> = ({
                     </tr>
                   );
                 })}
+                {filteredEmployees.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="py-12 text-center text-slate-500">
+                      <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                      <p className="font-semibold text-slate-700 text-sm">No Employee Records Yet</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                        Staff added through User Management or enrolled via "+ Enroll Employee" will appear here for shift tracking and payroll.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddEmpModal(true)}
+                        className="mt-3 px-3.5 py-1.5 bg-[#0084ff] hover:bg-[#0073e6] text-white rounded text-xs font-semibold cursor-pointer shadow-xs transition-colors"
+                      >
+                        + Enroll First Employee
+                      </button>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

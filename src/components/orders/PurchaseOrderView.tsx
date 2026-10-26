@@ -99,76 +99,8 @@ export const PurchaseOrderView: React.FC<PurchaseOrderViewProps> = ({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Sample Purchase Orders data
-  const [orders, setOrders] = useState<PurchaseOrderItem[]>([
-    {
-      id: 'po-001',
-      poNumber: 'PO-2026-001',
-      poDate: '2026-10-18',
-      expectedDate: '2026-10-24',
-      vendorId: vendors[0]?.id || 'v1',
-      vendorName: vendors[0]?.companyName || (vendors[0] as any)?.name || 'Apollo Medical Supplies Ltd',
-      itemsCount: 4,
-      totalAmount: 18450.0,
-      status: 'PENDING',
-      notes: 'Urgent stock replenishment for seasonal analgesics',
-      items: [
-        { productName: 'Paracetamol 650mg (Dolo 650)', stripSize: 15, orderQtyStrips: 100, receivedQtyStrips: 0, unitCost: 28.5, gstRate: 12, lineTotal: 3192.0 },
-        { productName: 'Azithromycin 500mg', stripSize: 3, orderQtyStrips: 50, receivedQtyStrips: 0, unitCost: 95.0, gstRate: 12, lineTotal: 5320.0 },
-        { productName: 'Pantoprazole 40mg', stripSize: 10, orderQtyStrips: 80, receivedQtyStrips: 0, unitCost: 45.0, gstRate: 12, lineTotal: 4032.0 },
-        { productName: 'Cetirizine 10mg', stripSize: 10, orderQtyStrips: 120, receivedQtyStrips: 0, unitCost: 18.0, gstRate: 12, lineTotal: 2419.2 },
-      ],
-    },
-    {
-      id: 'po-002',
-      poNumber: 'PO-2026-002',
-      poDate: '2026-10-15',
-      expectedDate: '2026-10-20',
-      vendorId: vendors[1]?.id || 'v2',
-      vendorName: vendors[1]?.companyName || (vendors[1] as any)?.name || 'MedPlus Wholesale Distributors',
-      itemsCount: 2,
-      totalAmount: 9240.0,
-      status: 'PARTIALLY_RECEIVED',
-      notes: 'Partial shipment arrived; balance pending batch release',
-      items: [
-        { productName: 'Metformin 500mg SR', stripSize: 10, orderQtyStrips: 150, receivedQtyStrips: 100, unitCost: 24.0, gstRate: 12, lineTotal: 4032.0 },
-        { productName: 'Amoxicillin 500mg', stripSize: 10, orderQtyStrips: 100, receivedQtyStrips: 40, unitCost: 46.5, gstRate: 12, lineTotal: 5208.0 },
-      ],
-    },
-    {
-      id: 'po-003',
-      poNumber: 'PO-2026-003',
-      poDate: '2026-10-10',
-      expectedDate: '2026-10-14',
-      vendorId: vendors[0]?.id || 'v1',
-      vendorName: vendors[0]?.companyName || (vendors[0] as any)?.name || 'Apollo Medical Supplies Ltd',
-      itemsCount: 3,
-      totalAmount: 14200.0,
-      status: 'COMPLETED',
-      notes: 'GRN-2026-089 posted and reconciled in full',
-      items: [
-        { productName: 'Telmisartan 40mg', stripSize: 10, orderQtyStrips: 80, receivedQtyStrips: 80, unitCost: 55.0, gstRate: 12, lineTotal: 4928.0 },
-        { productName: 'Rosuvastatin 10mg', stripSize: 10, orderQtyStrips: 60, receivedQtyStrips: 60, unitCost: 82.0, gstRate: 12, lineTotal: 5510.4 },
-        { productName: 'Vitamin C 500mg Chewable', stripSize: 15, orderQtyStrips: 100, receivedQtyStrips: 100, unitCost: 33.6, gstRate: 12, lineTotal: 3763.2 },
-      ],
-    },
-    {
-      id: 'po-004',
-      poNumber: 'PO-2026-004',
-      poDate: '2026-10-05',
-      expectedDate: '2026-10-10',
-      vendorId: vendors[2]?.id || 'v3',
-      vendorName: vendors[2]?.companyName || (vendors[2] as any)?.name || 'Sun Pharma Regional Depot',
-      itemsCount: 1,
-      totalAmount: 6400.0,
-      status: 'CANCELLED',
-      cancelReason: 'Supplier price dispute - reissued under contract revision',
-      notes: 'Discontinued order',
-      items: [
-        { productName: 'Atorvastatin 20mg', stripSize: 10, orderQtyStrips: 70, receivedQtyStrips: 0, unitCost: 81.6, gstRate: 12, lineTotal: 6400.0 },
-      ],
-    },
-  ]);
+  // Purchase Orders collection (starts empty on clean installation)
+  const [orders, setOrders] = useState<PurchaseOrderItem[]>([]);
 
   // Selected Order for Detail Modal
   const [selectedOrder, setSelectedOrder] = useState<PurchaseOrderItem | null>(null);

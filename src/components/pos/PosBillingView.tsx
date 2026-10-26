@@ -41,7 +41,6 @@ import { PrintTemplates } from '../print/PrintTemplates';
 import {
   isPrescriptionQr,
   parsePrescriptionQr,
-  SAMPLE_PRESCRIPTION_QRS,
   ParsedDigitalPrescription,
 } from '../../utils/prescriptionQrParser';
 
@@ -49,6 +48,7 @@ export const PosBillingView: React.FC = () => {
   const {
     products,
     batches,
+    invoices,
     printerSettings,
     updatePrinterSettings,
     currentUser,
@@ -213,12 +213,23 @@ export const PosBillingView: React.FC = () => {
     setShowNameDropdown(false);
 
     // Pick earliest non-expired batch with available stock
+    const isNonExpired = (b: Batch) => {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const exp = new Date(b.expiryDate);
+      exp.setHours(0, 0, 0, 0);
+      return exp.getTime() >= now.getTime();
+    };
+
     const prodBatches = batches
-      .filter((b) => b.productId === prod.id && b.totalTablets > 0)
+      .filter((b) => b.productId === prod.id && b.totalTablets > 0 && isNonExpired(b))
       .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
 
     const chosenBatch =
-      preferredBatch || prodBatches[0] || batches.find((b) => b.productId === prod.id) || null;
+      (preferredBatch && isNonExpired(preferredBatch) ? preferredBatch : null) ||
+      prodBatches[0] ||
+      batches.find((b) => b.productId === prod.id && isNonExpired(b)) ||
+      null;
     setDraftBatch(chosenBatch);
     setDraftQty(1);
 
@@ -231,7 +242,11 @@ export const PosBillingView: React.FC = () => {
   // Product Selection helper (for modal and top search)
   const handleSelectProduct = (product: Product) => {
     setSelectedProductId(product.id);
-    const availableBatches = batches.filter((b) => b.productId === product.id && b.totalTablets > 0);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const availableBatches = batches.filter(
+      (b) => b.productId === product.id && b.totalTablets > 0 && new Date(b.expiryDate).getTime() >= now.getTime()
+    );
     if (availableBatches.length > 0) {
       setSelectedBatchId(availableBatches[0].id);
     } else {
@@ -247,6 +262,18 @@ export const PosBillingView: React.FC = () => {
     quantity: number
   ) => {
     if (quantity <= 0) return;
+
+    // Guard against dispensing expired medications
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const expDate = new Date(batch.expiryDate);
+    expDate.setHours(0, 0, 0, 0);
+    if (expDate.getTime() < now.getTime()) {
+      alert(
+        `Cannot dispense expired batch ${batch.batchNumber} (Expired on: ${batch.expiryDate}). Please quarantine this batch.`
+      );
+      return;
+    }
 
     const stripSize = product.stripSize || 10;
     const tabletsRequested = unitType === 'STRIP' ? quantity * stripSize : quantity;
@@ -588,7 +615,18 @@ export const PosBillingView: React.FC = () => {
       return;
     }
 
-    const invoiceNumber = `JP/2026-27/${String(Math.floor(1000 + Math.random() * 9000))}`;
+    const currentYear = new Date().getFullYear();
+    const fy = `${currentYear}-${String(currentYear + 1).slice(-2)}`;
+    const maxSeq = invoices.reduce((max, inv) => {
+      const match = inv.invoiceNumber?.match(/JP\/\d{4}-\d{2}\/(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        return num > max ? num : max;
+      }
+      return max;
+    }, 1000);
+    const nextSeq = maxSeq + 1;
+    const invoiceNumber = `JP/${fy}/${String(nextSeq).padStart(4, '0')}`;
     const newInvoice: Invoice = {
       id: `inv_${Date.now()}`,
       invoiceNumber,
@@ -866,7 +904,11 @@ export const PosBillingView: React.FC = () => {
                 </div>
               ) : (
                 filteredProducts.map((p) => {
-                  const prodBatches = batches.filter((b) => b.productId === p.id && b.totalTablets > 0);
+                  const now = new Date();
+                  now.setHours(0, 0, 0, 0);
+                  const prodBatches = batches.filter(
+                    (b) => b.productId === p.id && b.totalTablets > 0 && new Date(b.expiryDate).getTime() >= now.getTime()
+                  );
                   const totalTabs = prodBatches.reduce((acc, b) => acc + b.totalTablets, 0);
                   const stock = formatDualUnitStock(totalTabs, p.stripSize);
                   const earliestBatch = prodBatches.sort(
@@ -2257,34 +2299,6 @@ export const PosBillingView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Sample QR Templates */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Sample E-Prescriptions (Click to Test)
-                </label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                  {SAMPLE_PRESCRIPTION_QRS.map((sample, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => setManualQrInput(sample.payload)}
-                      className="p-3 border border-slate-200 hover:border-sky-400 bg-slate-50 hover:bg-sky-50/50 rounded-md cursor-pointer transition-colors flex flex-col justify-between text-left"
-                    >
-                      <div>
-                        <div className="font-semibold text-slate-900 text-[11px] line-clamp-2">
-                          {sample.label}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-1">
-                          {sample.doctor}
-                        </div>
-                      </div>
-                      <div className="mt-2 text-[10px] font-semibold text-sky-600 flex items-center justify-between">
-                        <span>Load Payload →</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* Raw Payload Textarea */}
               <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -2408,7 +2422,11 @@ export const PosBillingView: React.FC = () => {
                         );
                       })
                       .map((p) => {
-                        const prodBatches = batches.filter((b) => b.productId === p.id && b.totalTablets > 0);
+                        const now = new Date();
+                        now.setHours(0, 0, 0, 0);
+                        const prodBatches = batches.filter(
+                          (b) => b.productId === p.id && b.totalTablets > 0 && new Date(b.expiryDate).getTime() >= now.getTime()
+                        );
                         const totalTabs = prodBatches.reduce((acc, b) => acc + b.totalTablets, 0);
                         const stock = formatDualUnitStock(totalTabs, p.stripSize);
                         const earliestBatch = prodBatches.sort(

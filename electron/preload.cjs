@@ -2,12 +2,33 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
-  
+
+  // Authentication & Onboarding
+  auth: {
+    getAuthState: () => ipcRenderer.invoke('auth:getAuthState'),
+    setupOnboarding: (payload) => ipcRenderer.invoke('auth:setupOnboarding', payload),
+    login: (credentials) => ipcRenderer.invoke('auth:login', credentials),
+    logout: () => ipcRenderer.invoke('auth:logout'),
+    getUsers: () => ipcRenderer.invoke('auth:getUsers'),
+    createUser: (userData) => ipcRenderer.invoke('auth:createUser', userData),
+    deactivateUser: (userId) => ipcRenderer.invoke('auth:deactivateUser', userId),
+    activateUser: (userId) => ipcRenderer.invoke('auth:activateUser', userId),
+    resetPassword: (payload) => ipcRenderer.invoke('auth:resetPassword', payload),
+    updatePharmacyProfile: (payload) => ipcRenderer.invoke('auth:updatePharmacyProfile', payload),
+  },
+
   // Database operations
   getAllData: () => ipcRenderer.invoke('db:getAllData'),
   saveProduct: (product) => ipcRenderer.invoke('db:saveProduct', product),
   saveBatch: (batch) => ipcRenderer.invoke('db:saveBatch', batch),
-  createInvoice: (invoice) => ipcRenderer.invoke('db:createInvoice', invoice),
+  createInvoice: (invoice, auditEntries = []) => {
+    if (invoice && invoice.invoice) {
+      return ipcRenderer.invoke('db:createInvoice', invoice);
+    }
+    return ipcRenderer.invoke('db:createInvoice', { invoice, auditEntries });
+  },
+  cancelInvoice: (data) => ipcRenderer.invoke('db:cancelInvoice', data),
+  updateInvoicePaymentMethod: (data) => ipcRenderer.invoke('db:updateInvoicePaymentMethod', data),
   recordStockAdjustment: (adjustment) => ipcRenderer.invoke('db:recordStockAdjustment', adjustment),
   saveVendor: (vendor) => ipcRenderer.invoke('db:saveVendor', vendor),
   logDpdp: (entry) => ipcRenderer.invoke('db:logDpdp', entry),

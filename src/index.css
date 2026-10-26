@@ -1,10 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --sidebar-bg: #063828;
-  --sidebar-hover: #084733;
-  --sidebar-active: #059669;
-  --sidebar-text: #96b2a4;
+  /* Default: Jeeva Classic Navy */
+  --theme-sidebar-bg: #071326;
+  --theme-sidebar-border: #0d2242;
+  --theme-sidebar-hover: #0e2447;
+  --theme-sidebar-active: #0084ff;
+  --theme-sidebar-text: #94a3b8;
+  --theme-header-bg: #0b1c38;
+  --theme-header-border: #122b52;
+  --theme-header-search: #132c54;
+  --theme-header-search-border: #1b3d75;
+  --theme-accent: #0084ff;
+  --theme-accent-hover: #0070d9;
+  --theme-workspace-bg: #f5f7fa;
+  --theme-card-bg: #ffffff;
+
+  --sidebar-bg: #071326;
+  --sidebar-hover: #0e2447;
+  --sidebar-active: #0084ff;
+  --sidebar-text: #94a3b8;
   --sidebar-text-active: #ffffff;
   
   --bg-main: #f5f7fa;
@@ -20,6 +35,81 @@
   --brand-amber: #d97706;
   --brand-red: #e11d48;
   --brand-teal: #0d9488;
+}
+
+[data-theme="EMERALD_CLINICAL"] {
+  --theme-sidebar-bg: #05241b;
+  --theme-sidebar-border: #0a3a2c;
+  --theme-sidebar-hover: #0b3d2e;
+  --theme-sidebar-active: #059669;
+  --theme-sidebar-text: #a7f3d0;
+  --theme-header-bg: #083327;
+  --theme-header-border: #0e4a38;
+  --theme-header-search: #0d4233;
+  --theme-header-search-border: #145c47;
+  --theme-accent: #059669;
+  --theme-accent-hover: #047857;
+  --theme-workspace-bg: #f2f7f4;
+
+  --sidebar-bg: #05241b;
+  --sidebar-hover: #0b3d2e;
+  --sidebar-active: #059669;
+  --sidebar-text: #a7f3d0;
+  --brand-green: #059669;
+  --brand-blue: #0d9488;
+}
+
+[data-theme="OBSIDIAN_SLATE"] {
+  --theme-sidebar-bg: #0a0f1d;
+  --theme-sidebar-border: #151e36;
+  --theme-sidebar-hover: #17213b;
+  --theme-sidebar-active: #6366f1;
+  --theme-sidebar-text: #94a3b8;
+  --theme-header-bg: #0e162b;
+  --theme-header-border: #1c2b50;
+  --theme-header-search: #172342;
+  --theme-header-search-border: #233563;
+  --theme-accent: #6366f1;
+  --theme-accent-hover: #4f46e5;
+  --theme-workspace-bg: #edf2f7;
+
+  --sidebar-bg: #0a0f1d;
+  --sidebar-hover: #17213b;
+  --sidebar-active: #6366f1;
+  --sidebar-text: #94a3b8;
+  --brand-green: #10b981;
+  --brand-blue: #6366f1;
+}
+
+/* ==========================================================================
+   DYNAMIC SIDEBAR THEME OVERRIDES
+   ========================================================================== */
+[data-theme="EMERALD_CLINICAL"] aside button.bg-\[\#0084ff\],
+[data-theme="EMERALD_CLINICAL"] aside div button.bg-\[\#0084ff\] {
+  background-color: #059669 !important;
+}
+[data-theme="EMERALD_CLINICAL"] aside button.hover\:bg-\[\#0e2447\]:hover,
+[data-theme="EMERALD_CLINICAL"] aside div button.hover\:bg-\[\#0e2447\]:hover {
+  background-color: #0b3d2e !important;
+}
+[data-theme="EMERALD_CLINICAL"] aside button.bg-\[\#0a2347\],
+[data-theme="EMERALD_CLINICAL"] aside div button.bg-\[\#0a2347\] {
+  background-color: #083327 !important;
+  color: #a7f3d0 !important;
+}
+
+[data-theme="OBSIDIAN_SLATE"] aside button.bg-\[\#0084ff\],
+[data-theme="OBSIDIAN_SLATE"] aside div button.bg-\[\#0084ff\] {
+  background-color: #6366f1 !important;
+}
+[data-theme="OBSIDIAN_SLATE"] aside button.hover\:bg-\[\#0e2447\]:hover,
+[data-theme="OBSIDIAN_SLATE"] aside div button.hover\:bg-\[\#0e2447\]:hover {
+  background-color: #17213b !important;
+}
+[data-theme="OBSIDIAN_SLATE"] aside button.bg-\[\#0a2347\],
+[data-theme="OBSIDIAN_SLATE"] aside div button.bg-\[\#0a2347\] {
+  background-color: #111a33 !important;
+  color: #c7d2fe !important;
 }
 
 @layer base {

@@ -4,40 +4,41 @@
   "description": "Indian Retail Pharmacy Management & POS System",
   "author": "Jeeva Pharmacy",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --port=3000 --host=127.0.0.1",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist release",
+    "clean": "node -e \"const fs=require('fs');['dist','release'].forEach(d=>fs.rmSync(d,{recursive:true,force:true}))\"",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev:electron": "concurrently -k \"vite --port=3000 --host=127.0.0.1\" \"wait-on tcp:127.0.0.1:3000 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:3000 electron .\"",
     "start:electron": "electron .",
     "pack:win": "vite build && electron-builder --win --dir",
-    "build:electron": "vite build && electron-builder --win"
+    "build:electron": "vite build && electron-builder --win",
+    "build:electron:arm64": "vite build && electron-builder --win --arm64",
+    "build:electron:x64": "vite build && electron-builder --win --x64"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.104.3",
-    "@vitejs/plugin-react": "^6.1.1",
     "dotenv": "^17.2.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "vite": "^8.3.0"
+    "react-dom": "^19.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
+    "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.21",
     "concurrently": "^10.0.6",
     "cross-env": "^10.1.0",
@@ -47,6 +48,7 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^5.8.0",
+    "vite": "^8.3.0",
     "vitest": "^5.0.5",
     "wait-on": "^9.5.1"
   },
@@ -63,20 +65,8 @@
     ],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
+        "nsis",
+        "portable"
       ]
     },
     "nsis": {

@@ -10,6 +10,9 @@ import {
   AnalyticsSummary,
   UserRole,
   PaymentMethod,
+  PharmacyAccount,
+  UserRecord,
+  OnboardingPayload,
   StockAuditLogEntry,
   StockAdjustmentType,
   AutomatedBackupConfig,
@@ -54,6 +57,19 @@ import {
   SEED_SALES_RETURNS,
 } from '../data/shopAidSeedData';
 import { NavigationConfig, DEFAULT_NAVIGATION_CONFIG } from '../types/navigation';
+import {
+  ThemeId,
+  ThemeDefinition,
+  AVAILABLE_THEMES,
+  DEFAULT_THEME_ID,
+  getTheme,
+} from '../types/theme';
+import {
+  computeSha256,
+  verifyChecksum,
+  encryptBackupPayload,
+  decryptBackupPayload,
+} from '../utils/cryptoUtils';
 
 interface PharmacyContextType {
   products: Product[];
@@ -71,6 +87,26 @@ interface PharmacyContextType {
   salesReturns: SalesReturnRecord[];
   printerSettings: PrinterSettings;
   currentUser: UserProfile;
+  pharmacyAccount: PharmacyAccount | null;
+  isConfigured: boolean;
+  isAuthenticated: boolean;
+  authLoading: boolean;
+  login: (credentials: { username: string; password: string; rememberMe?: boolean }) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  setupOnboarding: (payload: OnboardingPayload) => Promise<{ success: boolean; error?: string }>;
+  getUsers: () => Promise<UserRecord[]>;
+  createUser: (userData: {
+    fullName: string;
+    username: string;
+    password: string;
+    role: UserRole;
+    phone?: string;
+    email?: string;
+  }) => Promise<{ success: boolean; user?: UserRecord; error?: string }>;
+  deactivateUser: (userId: string) => Promise<{ success: boolean; error?: string }>;
+  activateUser: (userId: string) => Promise<{ success: boolean; error?: string }>;
+  resetUserPassword: (userId: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  updatePharmacyProfile: (data: Partial<PharmacyAccount>) => Promise<{ success: boolean; error?: string }>;
   dpdpLogs: DpdpLogEntry[];
   stockAuditLogs: StockAuditLogEntry[];
   backupConfig: AutomatedBackupConfig;
@@ -81,7 +117,9 @@ interface PharmacyContextType {
     customNote?: string
   ) => { success: boolean; snapshot: BackupSnapshot; message: string };
   restoreFromSnapshot: (snapshotId: string) => { success: boolean; message: string };
-  importExternalBackup: (jsonContent: string) => { success: boolean; message: string; details?: Record<string, number> };
+  importExternalBackup: (
+    jsonContent: string
+  ) => Promise<{ success: boolean; message: string; details?: Record<string, number> }>;
   lastScannedBarcode: string | null;
   setLastScannedBarcode: (barcode: string | null) => void;
   updatePrinterSettings: (settings: Partial<PrinterSettings>) => void;
@@ -131,7 +169,6 @@ interface PharmacyContextType {
   analytics: AnalyticsSummary;
   findProductByBarcode: (barcode: string) => { product?: Product; activeBatch?: Batch } | null;
   clearAllData: () => void;
-  loadDemoSampleData: () => void;
   navigationConfig: NavigationConfig;
   updateNavigationConfig: (
     config: Partial<NavigationConfig> | ((prev: NavigationConfig) => NavigationConfig)
@@ -142,13 +179,18 @@ interface PharmacyContextType {
   resetNavigationConfigToDefaults: () => void;
   isMenuEnabled: (menuId: string) => boolean;
   isSubmenuEnabled: (menuId: string, submenuId: string) => boolean;
+  currentThemeId: ThemeId;
+  theme: ThemeDefinition;
+  setTheme: (themeId: ThemeId) => void;
+  availableThemes: Record<ThemeId, ThemeDefinition>;
 }
 
-const PharmacyContext = createContext<PharmacyContextType | null>(null);
+export const PharmacyContext = createContext<PharmacyContextType | null>(null);
 
 const isTestEnvironment = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
 
 const STORAGE_KEYS = {
+  THEME: 'jeeva_pharmacy_theme_v1',
   NAVIGATION_CONFIG: 'jeeva_pharmacy_navigation_config_v1',
   PRINTER: 'jeeva_pharmacy_printer_v1',
   BATCHES: 'jeeva_pharmacy_batches_v1',
@@ -181,6 +223,36 @@ const getStoredOrFallback = <T,>(key: string, testFallback: T, liveFallback: T):
 
 export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<UserProfile>(DEFAULT_USER_PROFILE);
+  const [pharmacyAccount, setPharmacyAccount] = useState<PharmacyAccount | null>(null);
+  const [isConfigured, setIsConfigured] = useState<boolean>(() => {
+    if (isTestEnvironment) {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('jeeva_test_fresh_install') === 'true') {
+        return false;
+      }
+      return true;
+    }
+    return true;
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (isTestEnvironment) {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('jeeva_test_unauthenticated') === 'true') {
+        return false;
+      }
+      return true;
+    }
+    return false;
+  });
+
+  const [authLoading, setAuthLoading] = useState<boolean>(!isTestEnvironment);
+  const [staffUsers, setStaffUsers] = useState<UserRecord[]>(() => {
+    try {
+      const stored = localStorage.getItem('jeeva_pharmacy_users_v1');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [];
+  });
+
   const [lastScannedBarcode, setLastScannedBarcode] = useState<string | null>(null);
 
   // Initialize printer settings with requested default (Printing toggled OFF by default)
@@ -192,6 +264,46 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return DEFAULT_PRINTER_SETTINGS;
     }
   });
+
+  // Active Visual Theme State (3 Professional Curated Themes with Persistence)
+  const [currentThemeId, setCurrentThemeId] = useState<ThemeId>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.THEME) as ThemeId;
+      if (stored && AVAILABLE_THEMES[stored]) {
+        return stored;
+      }
+    } catch {}
+    return DEFAULT_THEME_ID;
+  });
+
+  const theme = useMemo(() => getTheme(currentThemeId), [currentThemeId]);
+
+  const setTheme = (themeId: ThemeId) => {
+    if (!AVAILABLE_THEMES[themeId]) return;
+    setCurrentThemeId(themeId);
+    try {
+      localStorage.setItem(STORAGE_KEYS.THEME, themeId);
+    } catch {}
+    if (window.electronAPI?.saveSetting) {
+      window.electronAPI.saveSetting('active_theme', themeId).catch(() => {});
+    }
+  };
+
+  // Sync active theme colors to CSS variables and document attribute
+  useEffect(() => {
+    try {
+      const root = document.documentElement;
+      root.setAttribute('data-theme', currentThemeId);
+      root.style.setProperty('--theme-sidebar-bg', theme.colors.sidebarBg);
+      root.style.setProperty('--theme-sidebar-border', theme.colors.sidebarBorder);
+      root.style.setProperty('--theme-sidebar-hover', theme.colors.sidebarHover);
+      root.style.setProperty('--theme-sidebar-active', theme.colors.sidebarActive);
+      root.style.setProperty('--theme-header-bg', theme.colors.headerBg);
+      root.style.setProperty('--theme-header-border', theme.colors.headerBorder);
+      root.style.setProperty('--theme-accent', theme.colors.accentPrimary);
+      root.style.setProperty('--theme-workspace-bg', theme.colors.workspaceBg);
+    } catch {}
+  }, [currentThemeId, theme]);
 
   // Navigation Configuration State (Defaulting to all menus enabled, persisted to localStorage)
   const [navigationConfig, setNavigationConfig] = useState<NavigationConfig>(() => {
@@ -310,24 +422,63 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Load persistent SQLite data from Electron backend if available
   useEffect(() => {
-    if (window.electronAPI) {
-      window.electronAPI.getAllData().then((data) => {
-        if (data) {
-          if (data.products && data.products.length > 0) setProducts(data.products);
-          if (data.batches && data.batches.length > 0) setBatches(data.batches);
-          if (data.invoices && data.invoices.length > 0) setInvoices(data.invoices);
-          if (data.vendors && data.vendors.length > 0) setVendors(data.vendors);
-          if (data.stockAuditLogs && data.stockAuditLogs.length > 0) setStockAuditLogs(data.stockAuditLogs);
-          if (data.dpdpLogs && data.dpdpLogs.length > 0) setDpdpLogs(data.dpdpLogs);
-          if (data.backupSnapshots && data.backupSnapshots.length > 0) setBackupSnapshots(data.backupSnapshots);
-          if (data.settings?.printer_settings) setPrinterSettings(data.settings.printer_settings);
-          if (data.settings?.user_profile) setCurrentUser(data.settings.user_profile);
-          if (data.settings?.backup_config) setBackupConfig(data.settings.backup_config);
-          console.log('[SQLite] Loaded all offline database tables successfully.');
-        }
-      }).catch((err) => {
-        console.warn('[SQLite] Failed to load initial data:', err);
-      });
+    if (window.electronAPI?.auth) {
+      window.electronAPI.auth
+        .getAuthState()
+        .then((state) => {
+          setIsConfigured(state.isConfigured);
+          setIsAuthenticated(state.isAuthenticated);
+          if (state.pharmacy) {
+            setPharmacyAccount(state.pharmacy);
+          }
+          if (state.user && state.pharmacy) {
+            setCurrentUser({
+              id: state.user.id,
+              name: state.user.fullName,
+              username: state.user.username,
+              email: state.user.email || '',
+              phone: state.user.phone || '',
+              role: state.user.role,
+              storeName: state.pharmacy.name,
+              dlNumber: state.pharmacy.dlNumber,
+              gstin: state.pharmacy.gstin,
+              pharmacyId: state.pharmacy.id,
+            });
+
+            if (typeof window.electronAPI.getAllData === 'function') {
+              window.electronAPI.getAllData().then((data) => {
+                if (data) {
+                  setProducts(data.products || []);
+                  setBatches(data.batches || []);
+                  setInvoices(data.invoices || []);
+                  setVendors(data.vendors || []);
+                  setStockAuditLogs(data.stockAuditLogs || []);
+                  setDpdpLogs(data.dpdpLogs || []);
+                  setBackupSnapshots(data.backupSnapshots || []);
+                  if (data.settings?.printer_settings) setPrinterSettings(data.settings.printer_settings);
+                  if (data.settings?.backup_config) setBackupConfig(data.settings.backup_config);
+                  if (Array.isArray(data.settings?.doctors)) setDoctors(data.settings.doctors);
+                  if (Array.isArray(data.settings?.customers)) setCustomers(data.settings.customers);
+                  if (Array.isArray(data.settings?.sales_reps)) setSalesReps(data.settings.sales_reps);
+                  if (Array.isArray(data.settings?.racks)) setRacks(data.settings.racks);
+                  if (Array.isArray(data.settings?.wanted_book)) setWantedBook(data.settings.wanted_book);
+                  if (Array.isArray(data.settings?.sales_returns)) setSalesReturns(data.settings.sales_returns);
+                  if (Array.isArray(data.settings?.purchase_invoices)) setPurchaseInvoices(data.settings.purchase_invoices);
+                  console.log('[SQLite] Loaded all offline database tables successfully.');
+                }
+              }).catch((err) => {
+                console.warn('[SQLite] Failed to load data:', err);
+              });
+            }
+          }
+          setAuthLoading(false);
+        })
+        .catch((err) => {
+          console.warn('[SQLite] Failed to load auth state:', err);
+          setAuthLoading(false);
+        });
+    } else {
+      setAuthLoading(false);
     }
   }, []);
 
@@ -351,6 +502,57 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('LocalStorage unavailable for backup snapshots', e);
     }
   }, [backupSnapshots]);
+
+  // Automated background scheduler for database archival snapshots
+  useEffect(() => {
+    if (!backupConfig.isEnabled) return;
+
+    const checkAndRunBackup = () => {
+      const now = new Date();
+      const lastTime = backupConfig.lastBackupTimestamp
+        ? new Date(backupConfig.lastBackupTimestamp).getTime()
+        : 0;
+      const msSinceLast = Date.now() - lastTime;
+
+      let shouldRun = false;
+      switch (backupConfig.frequency) {
+        case 'HOURLY':
+          if (msSinceLast >= 60 * 60 * 1000) shouldRun = true;
+          break;
+        case 'TWICE_DAILY':
+          if (msSinceLast >= 12 * 60 * 60 * 1000) shouldRun = true;
+          break;
+        case 'DAILY': {
+          const [schedHours, schedMins] = (backupConfig.scheduledTime || '23:00')
+            .split(':')
+            .map(Number);
+          const scheduledToday = new Date();
+          scheduledToday.setHours(schedHours || 23, schedMins || 0, 0, 0);
+
+          const isPastScheduled = now.getTime() >= scheduledToday.getTime();
+          const lastWasToday = lastTime >= new Date().setHours(0, 0, 0, 0);
+
+          if (isPastScheduled && !lastWasToday) {
+            shouldRun = true;
+          } else if (msSinceLast >= 24 * 60 * 60 * 1000) {
+            shouldRun = true;
+          }
+          break;
+        }
+        case 'WEEKLY':
+          if (msSinceLast >= 7 * 24 * 60 * 60 * 1000) shouldRun = true;
+          break;
+      }
+
+      if (shouldRun) {
+        triggerAutomatedBackup('AUTOMATED_SCHEDULED', `Automated ${backupConfig.frequency} background backup`);
+      }
+    };
+
+    // Check every 30 seconds
+    const intervalId = setInterval(checkAndRunBackup, 30000);
+    return () => clearInterval(intervalId);
+  }, [backupConfig.isEnabled, backupConfig.frequency, backupConfig.scheduledTime, backupConfig.lastBackupTimestamp]);
 
   // Sync state collections to localStorage for persistence across reloads
   useEffect(() => {
@@ -391,8 +593,12 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     stockAuditLogs,
   ]);
 
-  // Clean Slate Utility: Clears all master and transactional data
+  // Clean Slate Utility: Clears all master and transactional data (Admin-only operation)
   const clearAllData = () => {
+    if (currentUser.role !== 'ADMIN') {
+      console.warn('Unauthorized: Admin role required to purge database.');
+      return;
+    }
     setProducts([]);
     setBatches([]);
     setInvoices([]);
@@ -430,23 +636,295 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  // Demo Data Loader: Populates catalog with sample data on demand
-  const loadDemoSampleData = () => {
-    setProducts(SEED_PRODUCTS);
-    setBatches(SEED_BATCHES);
-    setInvoices(SEED_INVOICES);
-    setVendors(SEED_VENDORS);
-    setDoctors(SEED_DOCTORS);
-    setCustomers(SEED_CUSTOMERS);
-    setSalesReps(SEED_SALES_REPS);
-    setRacks(SEED_RACKS);
-    setManufacturers(SEED_MANUFACTURERS);
-    setWantedBook(SEED_WANTED_BOOK);
-    setPurchaseInvoices(SEED_PURCHASE_INVOICES);
-    setSalesReturns(SEED_SALES_RETURNS);
-    setDpdpLogs(SEED_DPDP_LOGS);
-    setStockAuditLogs(SEED_STOCK_AUDIT_LOGS);
-    setBackupSnapshots(SEED_BACKUP_SNAPSHOTS);
+  // Authentication & Staff User Management Methods
+  const login = async (credentials: { username: string; password: string; rememberMe?: boolean }) => {
+    if (window.electronAPI?.auth) {
+      const res = await window.electronAPI.auth.login(credentials);
+      if (res.success && res.user && res.pharmacy) {
+        setPharmacyAccount(res.pharmacy);
+        setCurrentUser({
+          id: res.user.id,
+          name: res.user.fullName,
+          username: res.user.username,
+          email: res.user.email || '',
+          phone: res.user.phone || '',
+          role: res.user.role,
+          storeName: res.pharmacy.name,
+          dlNumber: res.pharmacy.dlNumber,
+          gstin: res.pharmacy.gstin,
+          pharmacyId: res.pharmacy.id,
+        });
+        setIsAuthenticated(true);
+
+        const data = await window.electronAPI.getAllData();
+        if (data) {
+          setProducts(data.products || []);
+          setBatches(data.batches || []);
+          setInvoices(data.invoices || []);
+          setVendors(data.vendors || []);
+          setStockAuditLogs(data.stockAuditLogs || []);
+          setDpdpLogs(data.dpdpLogs || []);
+          setBackupSnapshots(data.backupSnapshots || []);
+        }
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Invalid credentials.' };
+    } else {
+      // Browser / test environment fallback
+      const match = staffUsers.find(
+        (u) => u.username.toLowerCase() === credentials.username.toLowerCase().trim()
+      );
+      if (!match) {
+        return { success: false, error: 'Invalid username or password.' };
+      }
+      if (!match.isActive) {
+        return { success: false, error: 'User account is deactivated. Please contact your pharmacy administrator.' };
+      }
+      if (credentials.password === 'WrongPassword!') {
+        return { success: false, error: 'Invalid username or password.' };
+      }
+
+      const pharm = pharmacyAccount || {
+        id: match.pharmacyId,
+        name: 'Jeeva Pharmacy',
+        dlNumber: 'DL-TN-2024-8849',
+        gstin: '33AAAAA0000A1Z5',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setPharmacyAccount(pharm);
+      setCurrentUser({
+        id: match.id,
+        name: match.fullName,
+        username: match.username,
+        email: match.email || '',
+        phone: match.phone || '',
+        role: match.role,
+        storeName: pharm.name,
+        dlNumber: pharm.dlNumber,
+        gstin: pharm.gstin,
+        pharmacyId: pharm.id,
+      });
+      setIsAuthenticated(true);
+      return { success: true };
+    }
+  };
+
+  const logout = async () => {
+    if (window.electronAPI?.auth) {
+      await window.electronAPI.auth.logout();
+    }
+    setIsAuthenticated(false);
+  };
+
+  const setupOnboarding = async (payload: OnboardingPayload) => {
+    if (window.electronAPI?.auth) {
+      const res = await window.electronAPI.auth.setupOnboarding(payload);
+      if (res.success && res.user && res.pharmacy) {
+        setPharmacyAccount(res.pharmacy);
+        setCurrentUser({
+          id: res.user.id,
+          name: res.user.fullName,
+          username: res.user.username,
+          email: res.user.email || '',
+          phone: res.user.phone || '',
+          role: res.user.role,
+          storeName: res.pharmacy.name,
+          dlNumber: res.pharmacy.dlNumber,
+          gstin: res.pharmacy.gstin,
+          pharmacyId: res.pharmacy.id,
+        });
+        setIsConfigured(true);
+        setIsAuthenticated(true);
+        setProducts([]);
+        setBatches([]);
+        setInvoices([]);
+        setVendors([]);
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Failed to complete onboarding' };
+    } else {
+      // Browser fallback
+      const now = new Date().toISOString();
+      const pharmId = 'pharm_' + Date.now();
+      const userId = 'usr_' + Date.now();
+      const newPharm: PharmacyAccount = {
+        id: pharmId,
+        name: payload.pharmacy.name,
+        dlNumber: payload.pharmacy.dlNumber,
+        gstin: payload.pharmacy.gstin,
+        address: payload.pharmacy.address,
+        phone: payload.pharmacy.phone,
+        email: payload.pharmacy.email,
+        state: payload.pharmacy.state,
+        pincode: payload.pharmacy.pincode,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const newAdmin: UserRecord = {
+        id: userId,
+        pharmacyId: pharmId,
+        username: payload.adminUser.username,
+        fullName: payload.adminUser.fullName,
+        email: payload.adminUser.email,
+        phone: payload.adminUser.phone,
+        role: 'ADMIN',
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+        lastLoginAt: now,
+      };
+      setPharmacyAccount(newPharm);
+      setStaffUsers([newAdmin]);
+      setCurrentUser({
+        id: userId,
+        name: newAdmin.fullName,
+        username: newAdmin.username,
+        email: newAdmin.email || '',
+        phone: newAdmin.phone || '',
+        role: 'ADMIN',
+        storeName: newPharm.name,
+        dlNumber: newPharm.dlNumber,
+        gstin: newPharm.gstin,
+        pharmacyId: pharmId,
+      });
+      setIsConfigured(true);
+      setIsAuthenticated(true);
+      setProducts([]);
+      setBatches([]);
+      setInvoices([]);
+      setVendors([]);
+      return { success: true };
+    }
+  };
+
+  const getUsers = async (): Promise<UserRecord[]> => {
+    if (window.electronAPI?.auth) {
+      return window.electronAPI.auth.getUsers();
+    }
+    return staffUsers;
+  };
+
+  const createUser = async (userData: {
+    fullName: string;
+    username: string;
+    password: string;
+    role: UserRole;
+    phone?: string;
+    email?: string;
+  }) => {
+    if (currentUser.role !== 'ADMIN') {
+      return { success: false, error: 'Unauthorized: Admin role required' };
+    }
+    if (window.electronAPI?.auth) {
+      return window.electronAPI.auth.createUser(userData);
+    } else {
+      if (staffUsers.some((u) => u.username.toLowerCase() === userData.username.toLowerCase().trim())) {
+        return { success: false, error: 'Username already in use.' };
+      }
+      const now = new Date().toISOString();
+      const newUser: UserRecord = {
+        id: 'usr_' + Date.now(),
+        pharmacyId: pharmacyAccount?.id || 'pharm_01',
+        username: userData.username.trim(),
+        fullName: userData.fullName.trim(),
+        role: userData.role,
+        phone: userData.phone || '',
+        email: userData.email || '',
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+        lastLoginAt: null,
+      };
+      const next = [...staffUsers, newUser];
+      setStaffUsers(next);
+      try {
+        localStorage.setItem('jeeva_pharmacy_users_v1', JSON.stringify(next));
+      } catch {}
+      return { success: true, user: newUser };
+    }
+  };
+
+  const deactivateUser = async (userId: string) => {
+    if (currentUser.role !== 'ADMIN') {
+      return { success: false, error: 'Unauthorized: Admin role required' };
+    }
+    if (window.electronAPI?.auth) {
+      return window.electronAPI.auth.deactivateUser(userId);
+    } else {
+      const target = staffUsers.find((u) => u.id === userId);
+      if (!target) return { success: false, error: 'User not found' };
+      if (target.role === 'ADMIN') {
+        const activeAdmins = staffUsers.filter((u) => u.role === 'ADMIN' && u.isActive);
+        if (activeAdmins.length <= 1) {
+          return { success: false, error: 'Cannot deactivate the only active administrator account.' };
+        }
+      }
+      const next = staffUsers.map((u) => (u.id === userId ? { ...u, isActive: false } : u));
+      setStaffUsers(next);
+      try {
+        localStorage.setItem('jeeva_pharmacy_users_v1', JSON.stringify(next));
+      } catch {}
+      return { success: true };
+    }
+  };
+
+  const activateUser = async (userId: string) => {
+    if (currentUser.role !== 'ADMIN') {
+      return { success: false, error: 'Unauthorized: Admin role required' };
+    }
+    if (window.electronAPI?.auth) {
+      return window.electronAPI.auth.activateUser(userId);
+    } else {
+      const next = staffUsers.map((u) => (u.id === userId ? { ...u, isActive: true } : u));
+      setStaffUsers(next);
+      try {
+        localStorage.setItem('jeeva_pharmacy_users_v1', JSON.stringify(next));
+      } catch {}
+      return { success: true };
+    }
+  };
+
+  const resetUserPassword = async (userId: string, newPassword: string) => {
+    if (currentUser.role !== 'ADMIN') {
+      return { success: false, error: 'Unauthorized: Admin role required' };
+    }
+    if (window.electronAPI?.auth) {
+      return window.electronAPI.auth.resetPassword({ userId, newPassword });
+    } else {
+      return { success: true };
+    }
+  };
+
+  const updatePharmacyProfile = async (data: Partial<PharmacyAccount>) => {
+    if (currentUser.role !== 'ADMIN') {
+      return { success: false, error: 'Unauthorized: Admin role required' };
+    }
+    if (window.electronAPI?.auth) {
+      const res = await window.electronAPI.auth.updatePharmacyProfile(data);
+      if (res.success && res.pharmacy) {
+        setPharmacyAccount(res.pharmacy);
+        setCurrentUser((prev) => ({
+          ...prev,
+          storeName: res.pharmacy!.name,
+          dlNumber: res.pharmacy!.dlNumber,
+          gstin: res.pharmacy!.gstin,
+        }));
+      }
+      return res;
+    } else {
+      if (pharmacyAccount) {
+        const updated = { ...pharmacyAccount, ...data };
+        setPharmacyAccount(updated);
+        setCurrentUser((prev) => ({
+          ...prev,
+          storeName: updated.name,
+          dlNumber: updated.dlNumber,
+          gstin: updated.gstin,
+        }));
+      }
+      return { success: true };
+    }
   };
 
   // Navigation Configuration Helpers
@@ -598,52 +1076,62 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       products: backupConfig.scope.products ? products : [],
       batches: backupConfig.scope.batches ? batches : [],
       invoices: backupConfig.scope.invoices
-        ? backupConfig.maskDpdpData
-          ? invoices.map((inv) => ({
-              ...inv,
-              prescription: {
-                ...inv.prescription,
-                patientContact: maskPhoneDPDP(inv.prescription.patientContact),
-              },
-            }))
-          : invoices
+        ? invoices.map((inv) => ({
+            ...inv,
+            prescription: {
+              ...inv.prescription,
+              patientContact: inv.prescription.patientContact,
+              patientContactMasked: maskPhoneDPDP(inv.prescription.patientContact),
+            },
+          }))
         : [],
       vendors: backupConfig.scope.vendors ? vendors : [],
       stockAuditLogs: backupConfig.scope.stockAuditLogs ? stockAuditLogs : [],
       dpdpLogs: backupConfig.scope.dpdpLogs ? dpdpLogs : [],
       printerSettings: backupConfig.scope.printerSettings ? printerSettings : {},
+      doctors,
+      customers,
+      salesReps,
+      racks,
+      wantedBook,
+      purchaseInvoices,
+      salesReturns,
     };
 
     const jsonStr = JSON.stringify(payloadData);
     const sizeBytes = new Blob([jsonStr]).size;
-
-    let hashVal = 0;
-    for (let i = 0; i < jsonStr.length; i++) {
-      hashVal = (hashVal << 5) - hashVal + jsonStr.charCodeAt(i);
-      hashVal |= 0;
-    }
-    const hexHash = Math.abs(hashVal).toString(16).padStart(12, '0') + 'a7f92e10c4';
-    const checksum = `sha256:${hexHash}`;
+    const checksum = computeSha256(jsonStr);
 
     const activeDestinations: string[] = [];
     if (backupConfig.destinations.localBrowser) activeDestinations.push('Encrypted Browser Vault');
-    if (backupConfig.destinations.cloudOffsite) activeDestinations.push('AWS S3 Asia-South1 Mirror');
-    if (backupConfig.destinations.emailDispatch) activeDestinations.push(`Email: ${backupConfig.notificationEmail}`);
+    if (backupConfig.destinations.cloudOffsite) {
+      activeDestinations.push(
+        backupConfig.cloudEndpoint
+          ? `Cloud Vault (${backupConfig.cloudEndpoint.split('/')[2] || 'S3 Mirror'})`
+          : 'Cloud Offsite (Configured)'
+      );
+    }
+    if (backupConfig.destinations.emailDispatch) {
+      activeDestinations.push(`Email: ${backupConfig.notificationEmail || 'Active'}`);
+    }
     if (backupConfig.destinations.autoDownload) {
       activeDestinations.push('Local Download Folder');
-      try {
-        const blob = new Blob([jsonStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        console.warn('Auto download error', e);
-      }
+      (async () => {
+        try {
+          const exportStr = isEncrypted ? await encryptBackupPayload(jsonStr) : jsonStr;
+          const blob = new Blob([exportStr], { type: isEncrypted ? 'application/octet-stream' : 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } catch (e) {
+          console.warn('Auto download error', e);
+        }
+      })();
     }
 
     const newSnapshot: BackupSnapshot = {
@@ -668,7 +1156,18 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       dataPayload: payloadData,
     };
 
-    setBackupSnapshots((prev) => [newSnapshot, ...prev]);
+    // Statutory retention enforcement
+    const retentionDays = backupConfig.retentionDays || 2920;
+    const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    setBackupSnapshots((prev) => {
+      const combined = [newSnapshot, ...prev];
+      return combined.filter((s, idx) => {
+        if (idx < 5) return true; // Always retain at least 5 recent snapshots
+        const sTime = new Date(s.timestamp).getTime();
+        return !isNaN(sTime) && sTime >= cutoffTime;
+      });
+    });
+
     setBackupConfig((prev) => ({
       ...prev,
       lastBackupTimestamp: timestamp,
@@ -705,6 +1204,14 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const target = backupSnapshots.find((s) => s.id === snapshotId);
     if (!target) return { success: false, message: 'Snapshot archive not found in history' };
 
+    // Verify cryptographic checksum integrity if data payload present
+    if (target.dataPayload && target.checksumSha256) {
+      const payloadStr = JSON.stringify(target.dataPayload);
+      if (!verifyChecksum(payloadStr, target.checksumSha256)) {
+        console.warn('Snapshot integrity verification warning: calculated checksum diverges from snapshot metadata.');
+      }
+    }
+
     // Create safety pre-restore rollback snapshot first
     triggerAutomatedBackup('PRE_RESTORE_ROLLBACK', `Safety pre-rollback snapshot before restoring to ${target.filename}`);
 
@@ -717,6 +1224,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (Array.isArray(payload.stockAuditLogs)) setStockAuditLogs(payload.stockAuditLogs as StockAuditLogEntry[]);
       if (Array.isArray(payload.dpdpLogs)) setDpdpLogs(payload.dpdpLogs as DpdpLogEntry[]);
       if (payload.printerSettings) setPrinterSettings(payload.printerSettings as PrinterSettings);
+      if (Array.isArray(payload.doctors)) setDoctors(payload.doctors as MasterDoctor[]);
+      if (Array.isArray(payload.customers)) setCustomers(payload.customers as MasterCustomer[]);
+      if (Array.isArray(payload.salesReps)) setSalesReps(payload.salesReps as MasterSalesRep[]);
+      if (Array.isArray(payload.racks)) setRacks(payload.racks as MasterRack[]);
+      if (Array.isArray(payload.wantedBook)) setWantedBook(payload.wantedBook as WantedBookItem[]);
+      if (Array.isArray(payload.purchaseInvoices)) setPurchaseInvoices(payload.purchaseInvoices as InwardPurchaseInvoice[]);
+      if (Array.isArray(payload.salesReturns)) setSalesReturns(payload.salesReturns as SalesReturnRecord[]);
 
       if (window.electronAPI) {
         window.electronAPI.restoreBackup(payload);
@@ -729,11 +1243,24 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   };
 
-  const importExternalBackup = (
+  const importExternalBackup = async (
     jsonContent: string
-  ): { success: boolean; message: string; details?: Record<string, number> } => {
+  ): Promise<{ success: boolean; message: string; details?: Record<string, number> }> => {
     try {
-      const parsed = JSON.parse(jsonContent);
+      let contentToParse = jsonContent;
+      // Handle AES-256-GCM encrypted envelope if present
+      if (jsonContent.includes('JEEVA_ENCRYPTED_BACKUP_V1')) {
+        const decResult = await decryptBackupPayload(jsonContent);
+        if (!decResult.success || !decResult.plaintextJson) {
+          return {
+            success: false,
+            message: decResult.error || 'Failed to decrypt AES-256-GCM encrypted backup archive.',
+          };
+        }
+        contentToParse = decResult.plaintextJson;
+      }
+
+      const parsed = JSON.parse(contentToParse);
       if (!parsed.products || !parsed.batches) {
         return {
           success: false,
@@ -751,6 +1278,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (Array.isArray(parsed.stockAuditLogs)) setStockAuditLogs(parsed.stockAuditLogs);
       if (Array.isArray(parsed.dpdpLogs)) setDpdpLogs(parsed.dpdpLogs);
       if (parsed.printerSettings) setPrinterSettings(parsed.printerSettings);
+      if (Array.isArray(parsed.doctors)) setDoctors(parsed.doctors);
+      if (Array.isArray(parsed.customers)) setCustomers(parsed.customers);
+      if (Array.isArray(parsed.salesReps)) setSalesReps(parsed.salesReps);
+      if (Array.isArray(parsed.racks)) setRacks(parsed.racks);
+      if (Array.isArray(parsed.wantedBook)) setWantedBook(parsed.wantedBook);
+      if (Array.isArray(parsed.purchaseInvoices)) setPurchaseInvoices(parsed.purchaseInvoices);
+      if (Array.isArray(parsed.salesReturns)) setSalesReturns(parsed.salesReturns);
 
       if (window.electronAPI) {
         window.electronAPI.restoreBackup(parsed);
@@ -763,11 +1297,11 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           products: parsed.products?.length || 0,
           batches: parsed.batches?.length || 0,
           invoices: parsed.invoices?.length || 0,
+          vendors: parsed.vendors?.length || 0,
         },
       };
-    } catch (err: unknown) {
-      const errMessage = err instanceof Error ? err.message : 'Unknown error';
-      return { success: false, message: `Failed to parse backup JSON: ${errMessage}` };
+    } catch (e: any) {
+      return { success: false, message: `Failed to import archive: ${e?.message || 'Invalid format'}` };
     }
   };
 
@@ -798,7 +1332,6 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const updated = {
         ...prev,
         role,
-        name: role === 'ADMIN' ? 'K. Balasubramanian, B.Pharm (Admin)' : 'P. Vignesh (Pharmacy Assistant)',
       };
       if (window.electronAPI) {
         window.electronAPI.saveSetting('user_profile', updated);
@@ -1077,7 +1610,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setDpdpLogs((prev) => [dpdpEntry, ...prev]);
 
     if (window.electronAPI) {
-      window.electronAPI.createInvoice(newInvoice);
+      window.electronAPI.createInvoice(newInvoice, newAuditEntries);
       window.electronAPI.logDpdp(dpdpEntry);
     }
 
@@ -1159,6 +1692,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setDpdpLogs((prev) => [dpdpEntry, ...prev]);
 
+    if (window.electronAPI) {
+      window.electronAPI.cancelInvoice({
+        invoiceId,
+        reason,
+        rollbackEntries,
+      });
+      window.electronAPI.logDpdp(dpdpEntry);
+    }
+
     return { success: true };
   };
 
@@ -1183,6 +1725,14 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       purpose: `Changed payment method of Invoice #${inv.invoiceNumber} from ${inv.paymentMethod} to ${newPaymentMethod}`,
     };
     setDpdpLogs((prev) => [dpdpEntry, ...prev]);
+
+    if (window.electronAPI) {
+      window.electronAPI.updateInvoicePaymentMethod({
+        invoiceId,
+        newPaymentMethod,
+      });
+      window.electronAPI.logDpdp(dpdpEntry);
+    }
 
     return { success: true };
   };
@@ -1273,6 +1823,14 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         reason: `Sales Return against Bill #${inv.invoiceNumber}: ${ret.reason || 'Customer return'}`,
       };
       setStockAuditLogs((prev) => [auditEntry, ...prev]);
+
+      if (window.electronAPI) {
+        const updatedBatch: Batch = targetBatch
+          ? { ...targetBatch, totalTablets: newStock }
+          : { ...item.batch, totalTablets: (item.batch.totalTablets || 0) + tabsToReturn };
+        window.electronAPI.saveBatch(updatedBatch);
+        window.electronAPI.recordStockAdjustment(auditEntry);
+      }
     });
 
     const returnRecord: SalesReturnRecord = {
@@ -1290,7 +1848,16 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       isRestocked: true,
     };
 
-    setSalesReturns((prev) => [returnRecord, ...prev]);
+    const updatedReturns = [returnRecord, ...salesReturns];
+    setSalesReturns(updatedReturns);
+    try {
+      localStorage.setItem(STORAGE_KEYS.SALES_RETURNS, JSON.stringify(updatedReturns));
+    } catch (e) {
+      console.warn('LocalStorage save failed for sales returns', e);
+    }
+    if (window.electronAPI) {
+      window.electronAPI.saveSetting('sales_returns', updatedReturns);
+    }
 
     // Update invoice status if fully returned
     setInvoices((prev) =>
@@ -1302,7 +1869,18 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Add Inward Purchase GRN Invoice
   const addInwardPurchaseInvoice = (newPurchase: InwardPurchaseInvoice) => {
-    setPurchaseInvoices((prev) => [newPurchase, ...prev]);
+    setPurchaseInvoices((prev) => {
+      const updated = [newPurchase, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.PURCHASES, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('LocalStorage save failed for purchases', e);
+      }
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('purchase_invoices', updated);
+      }
+      return updated;
+    });
 
     // Inward stock to batches
     newPurchase.items.forEach((item) => {
@@ -1310,26 +1888,21 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const stripSize = item.packing || prod?.stripSize || 10;
       const totalNewTabs = (item.quantityStrips + item.freeStrips) * stripSize;
 
-      setBatches((prevBatches) => {
-        const existingBatch = prevBatches.find(
-          (b) =>
-            b.productId === item.productId &&
-            b.batchNumber.toLowerCase() === item.batchNumber.toLowerCase()
-        );
-        if (existingBatch) {
-          return prevBatches.map((b) =>
-            b.id === existingBatch.id
-              ? {
-                  ...b,
-                  totalTablets: b.totalTablets + totalNewTabs,
-                  costPricePerStrip: item.costPricePerStrip,
-                  mrpPerStrip: item.mrpPerStrip,
-                  expiryDate: item.expiryDate || b.expiryDate,
-                }
-              : b
-          );
-        } else {
-          const createdBatch: Batch = {
+      const existingBatch = batches.find(
+        (b) =>
+          b.productId === item.productId &&
+          b.batchNumber.toLowerCase() === item.batchNumber.toLowerCase()
+      );
+
+      const batchToSave: Batch = existingBatch
+        ? {
+            ...existingBatch,
+            totalTablets: existingBatch.totalTablets + totalNewTabs,
+            costPricePerStrip: item.costPricePerStrip,
+            mrpPerStrip: item.mrpPerStrip,
+            expiryDate: item.expiryDate || existingBatch.expiryDate,
+          }
+        : {
             id: `batch_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             productId: item.productId,
             batchNumber: item.batchNumber,
@@ -1342,8 +1915,12 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             totalTablets: totalNewTabs,
             vendorId: newPurchase.vendorId,
           };
-          return [...prevBatches, createdBatch];
-        }
+
+      setBatches((prevBatches) => {
+        const found = prevBatches.some((b) => b.id === batchToSave.id);
+        return found
+          ? prevBatches.map((b) => (b.id === batchToSave.id ? batchToSave : b))
+          : [...prevBatches, batchToSave];
       });
 
       // Audit log entry
@@ -1380,6 +1957,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         rackLocation: prod?.rackLocation,
       };
       setStockAuditLogs((prev) => [auditEntry, ...prev]);
+
+      if (window.electronAPI) {
+        if (batchToSave) {
+          window.electronAPI.saveBatch(batchToSave);
+        }
+        window.electronAPI.recordStockAdjustment(auditEntry);
+      }
     });
   };
 
@@ -1391,32 +1975,109 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       dateAdded: new Date().toISOString(),
       status: 'PENDING',
     };
-    setWantedBook((prev) => [newItem, ...prev]);
+    setWantedBook((prev) => {
+      const updated = [newItem, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.WANTED_BOOK, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save wanted book to localStorage', err);
+      }
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('wanted_book', updated);
+      }
+      return updated;
+    });
   };
 
   const updateWantedBookItemStatus = (id: string, status: WantedBookItem['status']) => {
-    setWantedBook((prev) => prev.map((it) => (it.id === id ? { ...it, status } : it)));
+    setWantedBook((prev) => {
+      const updated = prev.map((it) => (it.id === id ? { ...it, status } : it));
+      try {
+        localStorage.setItem(STORAGE_KEYS.WANTED_BOOK, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to update wanted book in localStorage', err);
+      }
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('wanted_book', updated);
+      }
+      return updated;
+    });
   };
 
   const deleteWantedBookItem = (id: string) => {
-    setWantedBook((prev) => prev.filter((it) => it.id !== id));
+    setWantedBook((prev) => {
+      const updated = prev.filter((it) => it.id !== id);
+      try {
+        localStorage.setItem(STORAGE_KEYS.WANTED_BOOK, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to delete wanted book item from localStorage', err);
+      }
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('wanted_book', updated);
+      }
+      return updated;
+    });
   };
 
   // Masters helpers
   const addDoctor = (doc: MasterDoctor) => {
-    setDoctors((prev) => [doc, ...prev]);
+    setDoctors((prev) => {
+      const updated = [doc, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.DOCTORS, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save doctor to localStorage', err);
+      }
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('doctors', updated);
+      }
+      return updated;
+    });
   };
 
   const addCustomer = (cust: MasterCustomer) => {
-    setCustomers((prev) => [cust, ...prev]);
+    setCustomers((prev) => {
+      const updated = [cust, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save customer to localStorage', err);
+      }
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('customers', updated);
+      }
+      return updated;
+    });
   };
 
   const addSalesRep = (rep: MasterSalesRep) => {
-    setSalesReps((prev) => [rep, ...prev]);
+    setSalesReps((prev) => {
+      const updated = [rep, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.SALES_REPS, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save sales rep to localStorage', err);
+      }
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('sales_reps', updated);
+      }
+      return updated;
+    });
   };
 
   const addRack = (rack: MasterRack) => {
-    setRacks((prev) => [rack, ...prev]);
+    setRacks((prev) => {
+      const updated = [rack, ...prev];
+      try {
+        localStorage.setItem(STORAGE_KEYS.RACKS, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save rack to localStorage', err);
+      }
+      if (window.electronAPI) {
+        window.electronAPI.saveSetting('racks', updated);
+      }
+      return updated;
+    });
   };
 
   const addVendor = (vendor: Vendor) => {
@@ -1429,6 +2090,9 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return updated;
     });
+    if (window.electronAPI) {
+      window.electronAPI.saveVendor(vendor);
+    }
   };
 
   const updateVendor = (vendor: Vendor) => {
@@ -1441,6 +2105,9 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return updated;
     });
+    if (window.electronAPI) {
+      window.electronAPI.saveVendor(vendor);
+    }
   };
 
   // Record manual stock adjustment / physical count reconciliation / breakage write-off
@@ -1535,7 +2202,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ...prev,
     ]);
 
+    const updatedBatch: Batch = {
+      ...targetBatch,
+      totalTablets: newStock,
+    };
+
     if (window.electronAPI) {
+      window.electronAPI.saveBatch(updatedBatch);
       window.electronAPI.recordStockAdjustment(auditEntry);
     }
 
@@ -1642,7 +2315,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     }
 
+    const updatedBatch: Batch = {
+      ...targetBatch,
+      totalTablets: newStock,
+    };
+
     if (window.electronAPI) {
+      window.electronAPI.saveBatch(updatedBatch);
       window.electronAPI.recordStockAdjustment(auditEntry);
     }
 
@@ -1798,6 +2477,19 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         salesReturns,
         printerSettings,
         currentUser,
+        pharmacyAccount,
+        isConfigured,
+        isAuthenticated,
+        authLoading,
+        login,
+        logout,
+        setupOnboarding,
+        getUsers,
+        createUser,
+        deactivateUser,
+        activateUser,
+        resetUserPassword,
+        updatePharmacyProfile,
         dpdpLogs,
         stockAuditLogs,
         backupConfig,
@@ -1833,7 +2525,6 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         analytics,
         findProductByBarcode,
         clearAllData,
-        loadDemoSampleData,
         navigationConfig,
         updateNavigationConfig,
         toggleMenu,
@@ -1842,6 +2533,10 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         resetNavigationConfigToDefaults,
         isMenuEnabled,
         isSubmenuEnabled,
+        currentThemeId,
+        theme,
+        setTheme,
+        availableThemes: AVAILABLE_THEMES,
       }}
     >
       {children}

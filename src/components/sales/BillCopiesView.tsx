@@ -42,9 +42,15 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
     currentUser,
   } = usePharmacy();
 
-  // Filter States matching Image 3
-  const [fromDate, setFromDate] = useState<string>('01-10-2026');
-  const [toDate, setToDate] = useState<string>('12-10-2026');
+  // Filter States
+  const [fromDate, setFromDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+  });
+  const [toDate, setToDate] = useState<string>(() => {
+    return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+  });
   const [txType, setTxType] = useState<string>('All');
   const [series, setSeries] = useState<string>('All');
   const [billNoQuery, setBillNoQuery] = useState<string>('');
@@ -54,7 +60,7 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
   const [txMode, setTxMode] = useState<string>('All');
 
   // Selected Bill for details inspection & context actions
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>(invoices[0]?.id || 'SLS-00031');
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>(invoices[0]?.id || '');
   const [showContextMenu, setShowContextMenu] = useState<boolean>(false);
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -86,7 +92,7 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
   }, [initialAction]);
 
   // Master bills list: loads real invoices from context with fallback to demo bills
-  const sampleInvoicesList = useMemo(() => {
+  const billsList = useMemo(() => {
     let list: Array<{
       id: string;
       billDate: string;
@@ -123,121 +129,7 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
         };
       });
     } else {
-      list = [
-      {
-        id: 'inv_1',
-        billDate: '12-10-2026',
-        billTime: '10:21 AM',
-        billNumber: 'SLS-00032',
-        customerName: 'Kumar',
-        mobileNo: '9843012345',
-        billAmount: 842.0,
-        discAmt: 42.0,
-        netAmount: 800.0,
-        terminal: 'T01',
-        mode: 'Cash',
-        status: 'Normal',
-      },
-      {
-        id: 'inv_2',
-        billDate: '12-10-2026',
-        billTime: '09:58 AM',
-        billNumber: 'SLS-00031',
-        customerName: 'Priya',
-        mobileNo: '9786012345',
-        billAmount: 1230.0,
-        discAmt: 0.0,
-        netAmount: 1230.0,
-        terminal: 'T01',
-        mode: 'UPI',
-        status: 'Normal',
-      },
-      {
-        id: 'inv_3',
-        billDate: '12-10-2026',
-        billTime: '09:42 AM',
-        billNumber: 'SLS-00030',
-        customerName: 'Saravanan',
-        mobileNo: '9600012345',
-        billAmount: 650.0,
-        discAmt: 0.0,
-        netAmount: 650.0,
-        terminal: 'T02',
-        mode: 'Card',
-        status: 'Normal',
-      },
-      {
-        id: 'inv_4',
-        billDate: '12-10-2026',
-        billTime: '09:18 AM',
-        billNumber: 'SLS-00029',
-        customerName: 'Radhika',
-        mobileNo: '9789012345',
-        billAmount: 1540.0,
-        discAmt: 50.0,
-        netAmount: 1490.0,
-        terminal: 'T01',
-        mode: 'Cash',
-        status: 'Normal',
-      },
-      {
-        id: 'inv_5',
-        billDate: '12-10-2026',
-        billTime: '08:52 AM',
-        billNumber: 'SLS-00028',
-        customerName: 'Venkatesh',
-        mobileNo: '9841012345',
-        billAmount: 980.0,
-        discAmt: 0.0,
-        netAmount: 980.0,
-        terminal: 'T02',
-        mode: 'UPI',
-        status: 'Normal',
-      },
-      {
-        id: 'inv_6',
-        billDate: '11-10-2026',
-        billTime: '07:36 PM',
-        billNumber: 'SLS-00027',
-        customerName: 'Karthik',
-        mobileNo: '9845012345',
-        billAmount: 420.0,
-        discAmt: 0.0,
-        netAmount: 420.0,
-        terminal: 'T01',
-        mode: 'Cash',
-        status: 'Cancelled',
-      },
-      {
-        id: 'inv_7',
-        billDate: '11-10-2026',
-        billTime: '06:25 PM',
-        billNumber: 'SLS-00026',
-        customerName: 'Anitha',
-        mobileNo: '9500012345',
-        billAmount: 1120.0,
-        discAmt: 20.0,
-        netAmount: 1100.0,
-        terminal: 'T01',
-        mode: 'UPI',
-        status: 'Return',
-      },
-      {
-        id: 'inv_8',
-        billDate: '11-10-2026',
-        billTime: '05:10 PM',
-        billNumber: 'SLS-00025',
-        customerName: 'Deepak',
-        mobileNo: '9940012345',
-        billAmount: 360.0,
-        discAmt: 0.0,
-        netAmount: 360.0,
-        terminal: 'T02',
-        mode: 'Cash',
-        status: 'Normal',
-      },
-    ];
-
+      list = [];
     }
 
     if (!billNoQuery.trim() && !customerQuery.trim()) return list;
@@ -248,7 +140,7 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
     });
   }, [invoices, billNoQuery, customerQuery]);
 
-  const activeBill = sampleInvoicesList.find((b) => b.id === selectedInvoiceId) || sampleInvoicesList[0] || {
+  const activeBill = billsList.find((b) => b.id === selectedInvoiceId) || billsList[0] || {
     id: 'none',
     billDate: 'Today',
     billTime: '10:00 AM',
@@ -283,64 +175,7 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
         amount: item.totalAmount,
       }));
     }
-    return [
-    {
-      idx: 1,
-      name: 'Paracetamol 500mg',
-      composition: 'Paracetamol 500mg',
-      batch: 'P2501',
-      expiry: '04/2027',
-      qty: 2,
-      freeQty: 0,
-      mrp: 15.0,
-      rate: 12.5,
-      discPercent: 0.0,
-      discAmt: 0.0,
-      amount: 25.0,
-    },
-    {
-      idx: 2,
-      name: 'Amoxicillin 500mg',
-      composition: 'Amoxicillin 500mg',
-      batch: 'A2410',
-      expiry: '11/2026',
-      qty: 1,
-      freeQty: 0,
-      mrp: 32.0,
-      rate: 28.0,
-      discPercent: 0.0,
-      discAmt: 0.0,
-      amount: 28.0,
-    },
-    {
-      idx: 3,
-      name: 'ORS Packet',
-      composition: 'Oral Rehydration Salts',
-      batch: 'O2405',
-      expiry: '05/2027',
-      qty: 2,
-      freeQty: 0,
-      mrp: 25.0,
-      rate: 22.0,
-      discPercent: 0.0,
-      discAmt: 0.0,
-      amount: 44.0,
-    },
-    {
-      idx: 4,
-      name: 'Crocin 650mg',
-      composition: 'Paracetamol 650mg',
-      batch: 'C2408',
-      expiry: '08/2026',
-      qty: 1,
-      freeQty: 0,
-      mrp: 70.0,
-      rate: 70.0,
-      discPercent: 0.0,
-      discAmt: 0.0,
-      amount: 70.0,
-    },
-    ];
+    return [];
   }, [activeRealInvoice]);
 
   // Real context invoice handler (fallback)
@@ -570,7 +405,7 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {sampleInvoicesList.map((item, idx) => {
+              {billsList.map((item, idx) => {
                 const isSelected = item.id === selectedInvoiceId;
                 return (
                   <tr
@@ -616,6 +451,26 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
                   </tr>
                 );
               })}
+              {billsList.length === 0 && (
+                <tr>
+                  <td colSpan={12} className="py-12 text-center text-slate-500">
+                    <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <p className="font-semibold text-slate-700 text-sm">No Sales Bills Recorded Yet</p>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                      Sales finalized through Retail POS will appear here for reprint, returns, cancellations and audit.
+                    </p>
+                    {onOpenPosBilling && (
+                      <button
+                        type="button"
+                        onClick={onOpenPosBilling}
+                        className="mt-3 px-3.5 py-1.5 bg-[#0084ff] hover:bg-blue-600 text-white rounded text-xs font-semibold cursor-pointer shadow-xs transition-colors"
+                      >
+                        Open Retail POS (F1)
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

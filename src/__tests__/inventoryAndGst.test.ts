@@ -13,6 +13,13 @@ import {
   maskPhoneDPDP,
   GSTRate,
 } from '../types/pharmacy';
+import { DEFAULT_BACKUP_CONFIG } from '../data/seedData';
+import {
+  computeSha256,
+  verifyChecksum,
+  encryptBackupPayload,
+  decryptBackupPayload,
+} from '../utils/cryptoUtils';
 
 // Describe block for Dual-Unit Inventory Math
 describe('Dual-Unit Fractional Inventory Engine ("Strip vs. Tablet")', () => {
@@ -214,11 +221,13 @@ describe('Regulatory Compliance (DPDP Act & Expiry Triaging)', () => {
     expect(zone.days).toBeLessThanOrEqual(30);
   });
 
-  test('categorizes batches into 60-day warning and 90-day caution zones', () => {
+  test('categorizes batches into EXPIRED, 60-day warning and 90-day caution zones', () => {
     const today = new Date();
+    const expiredDate = new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const expiryIn45Days = new Date(today.getTime() + 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const expiryIn75Days = new Date(today.getTime() + 75 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+    expect(calculateExpiryZone(expiredDate).zone).toBe('EXPIRED');
     expect(calculateExpiryZone(expiryIn45Days).zone).toBe('WARNING_60');
     expect(calculateExpiryZone(expiryIn75Days).zone).toBe('CAUTION_90');
   });
@@ -226,23 +235,34 @@ describe('Regulatory Compliance (DPDP Act & Expiry Triaging)', () => {
 
 // Describe block for Automated Backup Configurations & Statutory Retention
 describe('Automated Backup Configurations & Statutory Retention (IT Act 44AA & GST Rule 56)', () => {
-  test('validates statutory 8-year record retention threshold (2920 days) for retail accounts', () => {
-    const statutoryDays = 2920; // 8 years * 365 days
-    expect(statutoryDays).toBe(2920);
+  test('validates statutory 8-year record retention threshold (2920 days) from DEFAULT_BACKUP_CONFIG', () => {
+    expect(DEFAULT_BACKUP_CONFIG.retentionDays).toBe(2920);
+    expect(DEFAULT_BACKUP_CONFIG.encryptionAlgorithm).toBe('AES-256-GCM');
   });
 
-  test('validates automated backup archive filename schema and encryption tag', () => {
-    const trigger = 'AUTOMATED_SCHEDULED';
-    const dateStr = '2026-10-16';
-    const timeStr = '230000';
-    const isEncrypted = true;
-    const filename = `Jeeva_Pharmacy_${trigger}_${dateStr}_${timeStr}.${isEncrypted ? 'enc.json' : 'json'}`;
+  test('validates cryptographic SHA-256 calculation and verification', () => {
+    const sampleData = JSON.stringify({ store: 'Jeeva Pharmacy', gstin: '33AAAAA0000A1Z5' });
+    const hash = computeSha256(sampleData);
 
-    expect(filename).toBe('Jeeva_Pharmacy_AUTOMATED_SCHEDULED_2026-10-16_230000.enc.json');
-    expect(filename.endsWith('.enc.json')).toBe(true);
+    expect(hash.startsWith('sha256:')).toBe(true);
+    expect(hash.length).toBe(71); // 'sha256:' (7) + 64 hex chars
+    expect(verifyChecksum(sampleData, hash)).toBe(true);
+    expect(verifyChecksum(sampleData + 'tampered', hash)).toBe(false);
   });
 
-  test('validates DPDP masking applied to offsite cloud backups protects customer contact info', () => {
+  test('validates AES-256-GCM encryption and decryption roundtrip for backup envelopes', async () => {
+    const plaintext = JSON.stringify({ products: [{ id: 'p1', name: 'Paracetamol' }] });
+    const encrypted = await encryptBackupPayload(plaintext);
+
+    expect(encrypted).toContain('JEEVA_ENCRYPTED_BACKUP_V1');
+    expect(encrypted).toContain('AES-256-GCM');
+
+    const decrypted = await decryptBackupPayload(encrypted);
+    expect(decrypted.success).toBe(true);
+    expect(decrypted.plaintextJson).toBe(plaintext);
+  });
+
+  test('validates DPDP masking applied to customer phone numbers with country codes', () => {
     const rawCustomerPhones = ['9840123456', '+91 94441 88920', '9876543210'];
     const maskedPhones = rawCustomerPhones.map(maskPhoneDPDP);
 

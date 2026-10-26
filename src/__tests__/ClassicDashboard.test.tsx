@@ -90,14 +90,14 @@ describe('Client UI/UX System Test: Jeeva Medicals Dashboard', () => {
 
     // Recent Sales
     expect(screen.getByText('Recent Sales')).toBeInTheDocument();
-    expect(screen.getByText('S00046')).toBeInTheDocument();
-    expect(screen.getByText('Ramesh Kumar')).toBeInTheDocument();
-    expect(screen.getByText('Lakshmi Devi')).toBeInTheDocument();
+    expect(screen.getByText('JP/2026-27/00481')).toBeInTheDocument();
+    expect(screen.getByText('K. Sundaram')).toBeInTheDocument();
 
     // Near Expiry Medicines
     expect(screen.getByText('Near Expiry Medicines')).toBeInTheDocument();
     expect(screen.getByText('Batch No.')).toBeInTheDocument();
     expect(screen.getByText('Days Left')).toBeInTheDocument();
+    expect(screen.getByText('DL24K09')).toBeInTheDocument();
   });
 
   test('renders right-side widget stack with Motto, Quick Links, and System Notifications', () => {

@@ -3,15 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Jeeva Pharmacy — Indian Retail Pharmacy Management & POS System</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:;" />
+    <title>Pristine — Indian Retail Pharmacy Management & POS System</title>
     <meta name="description" content="Enterprise pharmacy management application for Indian retail chemists. Features automated GST, HSN tracking, dual-unit fractional stock, hardware barcode scanner support, and dual-mode thermal/laser printing." />
-    <meta property="og:title" content="Jeeva Pharmacy — Indian Retail Pharmacy Management & POS System" />
+    <meta property="og:title" content="Pristine — Indian Retail Pharmacy Management & POS System" />
     <meta property="og:description" content="Enterprise pharmacy management application for Indian retail chemists. Features automated GST, HSN tracking, dual-unit fractional stock, hardware barcode scanner support, and dual-mode thermal/laser printing." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      window.addEventListener('error', function(event) {
+        console.error('[Window Error]', event.error || event.message);
+        var el = document.getElementById('error-overlay');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'error-overlay';
+          el.style = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#ffffff;color:#b91c1c;padding:32px;font-family:system-ui,sans-serif;z-index:9999999;overflow:auto;';
+          document.body.appendChild(el);
+        }
+        el.innerHTML = '<h2 style="font-size:20px;font-weight:bold;color:#b91c1c;margin:0 0 12px 0;">Application Startup Error</h2>' +
+          '<div style="background:#fef2f2;border:1px solid #fecaca;padding:16px;border-radius:8px;color:#991b1b;font-family:monospace;white-space:pre-wrap;font-size:13px;line-height:1.5;">' +
+          (event.error ? (event.error.stack || event.error.message) : event.message) +
+          '</div>';
+      });
+      window.addEventListener('unhandledrejection', function(event) {
+        console.error('[Unhandled Rejection]', event.reason);
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

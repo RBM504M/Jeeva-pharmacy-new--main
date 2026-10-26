@@ -113,10 +113,10 @@ export const AutomatedBackupConfigView: React.FC<AutomatedBackupConfigViewProps>
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const content = event.target?.result as string;
       if (content) {
-        const res = importExternalBackup(content);
+        const res = await importExternalBackup(content);
         notify(res.message);
       }
     };
