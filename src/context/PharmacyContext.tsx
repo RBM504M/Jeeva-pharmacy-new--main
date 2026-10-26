@@ -70,6 +70,14 @@ import {
   encryptBackupPayload,
   decryptBackupPayload,
 } from '../utils/cryptoUtils';
+import {
+  saveEntityCollection,
+  loadEntityCollection,
+  setKvItem,
+  getKvItem,
+  importDataFromJson,
+  clearAllIndexedDb,
+} from '../utils/indexedDbStorage';
 
 interface PharmacyContextType {
   products: Product[];
@@ -209,6 +217,8 @@ const STORAGE_KEYS = {
   AUDIT_LOGS: 'jeeva_pharmacy_audit_logs_v1',
   BACKUP_CONFIG: 'jeeva_pharmacy_backup_config_v1',
   BACKUP_SNAPSHOTS: 'jeeva_pharmacy_backup_snapshots_v1',
+  ACCOUNT: 'jeeva_pharmacy_account_v1',
+  USERS: 'jeeva_pharmacy_users_v1',
 };
 
 const getStoredOrFallback = <T,>(key: string, testFallback: T, liveFallback: T): T => {
@@ -223,7 +233,13 @@ const getStoredOrFallback = <T,>(key: string, testFallback: T, liveFallback: T):
 
 export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<UserProfile>(DEFAULT_USER_PROFILE);
-  const [pharmacyAccount, setPharmacyAccount] = useState<PharmacyAccount | null>(null);
+  const [pharmacyAccount, setPharmacyAccount] = useState<PharmacyAccount | null>(() => {
+    try {
+      const stored = localStorage.getItem('jeeva_pharmacy_account_v1');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return null;
+  });
   const [isConfigured, setIsConfigured] = useState<boolean>(() => {
     if (isTestEnvironment) {
       if (typeof localStorage !== 'undefined' && localStorage.getItem('jeeva_test_fresh_install') === 'true') {
@@ -231,7 +247,16 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return true;
     }
-    return true;
+    try {
+      const stored = localStorage.getItem('jeeva_pharmacy_account_v1');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed.name && parsed.name.trim().length > 0) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -482,6 +507,99 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
+  const [isStorageInitialized, setIsStorageInitialized] = useState<boolean>(isTestEnvironment);
+
+  // Load from versioned IndexedDB for client-only standalone mode
+  useEffect(() => {
+    if (!window.electronAPI && typeof indexedDB !== 'undefined' && !isTestEnvironment) {
+      (async () => {
+        try {
+          const [
+            idbProducts,
+            idbBatches,
+            idbInvoices,
+            idbVendors,
+            idbPurchases,
+            idbAuditLogs,
+            idbDpdpLogs,
+            idbSnapshots,
+            idbAccount,
+          ] = await Promise.all([
+            loadEntityCollection<Product>('products'),
+            loadEntityCollection<Batch>('batches'),
+            loadEntityCollection<Invoice>('invoices'),
+            loadEntityCollection<Vendor>('vendors'),
+            loadEntityCollection<InwardPurchaseInvoice>('purchaseInvoices'),
+            loadEntityCollection<StockAuditLogEntry>('stockAuditLogs'),
+            loadEntityCollection<DpdpLogEntry>('dpdpLogs'),
+            loadEntityCollection<BackupSnapshot>('backupSnapshots'),
+            getKvItem<PharmacyAccount>('meta', 'pharmacyAccount'),
+          ]);
+
+          if (idbAccount) {
+            setPharmacyAccount(idbAccount);
+            setIsConfigured(true);
+          }
+          if (idbProducts && idbProducts.length > 0) setProducts(idbProducts);
+          if (idbBatches && idbBatches.length > 0) setBatches(idbBatches);
+          if (idbInvoices && idbInvoices.length > 0) setInvoices(idbInvoices);
+          if (idbVendors && idbVendors.length > 0) setVendors(idbVendors);
+          if (idbPurchases && idbPurchases.length > 0) setPurchaseInvoices(idbPurchases);
+          if (idbAuditLogs && idbAuditLogs.length > 0) setStockAuditLogs(idbAuditLogs);
+          if (idbDpdpLogs && idbDpdpLogs.length > 0) setDpdpLogs(idbDpdpLogs);
+          if (idbSnapshots && idbSnapshots.length > 0) setBackupSnapshots(idbSnapshots);
+        } catch (e) {
+          console.warn('[IndexedDB] Initial load notice:', e);
+        } finally {
+          setIsStorageInitialized(true);
+        }
+      })();
+    } else {
+      setIsStorageInitialized(true);
+    }
+  }, []);
+
+  // Sync operational collections to IndexedDB
+  useEffect(() => {
+    if (!isStorageInitialized || window.electronAPI || typeof indexedDB === 'undefined' || isTestEnvironment) return;
+    saveEntityCollection('products', products).catch((err) => console.warn('[IndexedDB] products save failed:', err));
+  }, [products, isStorageInitialized]);
+
+  useEffect(() => {
+    if (!isStorageInitialized || window.electronAPI || typeof indexedDB === 'undefined' || isTestEnvironment) return;
+    saveEntityCollection('batches', batches).catch((err) => console.warn('[IndexedDB] batches save failed:', err));
+  }, [batches, isStorageInitialized]);
+
+  useEffect(() => {
+    if (!isStorageInitialized || window.electronAPI || typeof indexedDB === 'undefined' || isTestEnvironment) return;
+    saveEntityCollection('invoices', invoices).catch((err) => console.warn('[IndexedDB] invoices save failed:', err));
+  }, [invoices, isStorageInitialized]);
+
+  useEffect(() => {
+    if (!isStorageInitialized || window.electronAPI || typeof indexedDB === 'undefined' || isTestEnvironment) return;
+    saveEntityCollection('vendors', vendors).catch((err) => console.warn('[IndexedDB] vendors save failed:', err));
+  }, [vendors, isStorageInitialized]);
+
+  useEffect(() => {
+    if (!isStorageInitialized || window.electronAPI || typeof indexedDB === 'undefined' || isTestEnvironment) return;
+    saveEntityCollection('purchaseInvoices', purchaseInvoices).catch((err) => console.warn('[IndexedDB] purchases save failed:', err));
+  }, [purchaseInvoices, isStorageInitialized]);
+
+  useEffect(() => {
+    if (!isStorageInitialized || window.electronAPI || typeof indexedDB === 'undefined' || isTestEnvironment) return;
+    saveEntityCollection('stockAuditLogs', stockAuditLogs).catch((err) => console.warn('[IndexedDB] audit logs save failed:', err));
+  }, [stockAuditLogs, isStorageInitialized]);
+
+  useEffect(() => {
+    if (!isStorageInitialized || window.electronAPI || typeof indexedDB === 'undefined' || isTestEnvironment) return;
+    saveEntityCollection('dpdpLogs', dpdpLogs).catch((err) => console.warn('[IndexedDB] dpdp logs save failed:', err));
+  }, [dpdpLogs, isStorageInitialized]);
+
+  useEffect(() => {
+    if (!isStorageInitialized || window.electronAPI || typeof indexedDB === 'undefined' || isTestEnvironment) return;
+    saveEntityCollection('backupSnapshots', backupSnapshots).catch((err) => console.warn('[IndexedDB] snapshots save failed:', err));
+  }, [backupSnapshots, isStorageInitialized]);
+
   // Sync backup configuration to localStorage
   useEffect(() => {
     try {
@@ -614,6 +732,8 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setDpdpLogs([]);
     setStockAuditLogs([]);
     setBackupSnapshots([]);
+
+    clearAllIndexedDb().catch(() => {});
 
     try {
       localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
@@ -776,6 +896,14 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
       setPharmacyAccount(newPharm);
       setStaffUsers([newAdmin]);
+      try {
+        localStorage.setItem(STORAGE_KEYS.ACCOUNT, JSON.stringify(newPharm));
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify([newAdmin]));
+        if (typeof indexedDB !== 'undefined') {
+          setKvItem('meta', 'pharmacyAccount', newPharm);
+          setKvItem('meta', 'staffUsers', [newAdmin]);
+        }
+      } catch {}
       setCurrentUser({
         id: userId,
         name: newAdmin.fullName,
@@ -794,6 +922,10 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setBatches([]);
       setInvoices([]);
       setVendors([]);
+      setStockAuditLogs([]);
+      setDpdpLogs([]);
+      setPurchaseInvoices([]);
+      setBackupSnapshots([]);
       return { success: true };
     }
   };
@@ -1103,17 +1235,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const checksum = computeSha256(jsonStr);
 
     const activeDestinations: string[] = [];
-    if (backupConfig.destinations.localBrowser) activeDestinations.push('Encrypted Browser Vault');
-    if (backupConfig.destinations.cloudOffsite) {
-      activeDestinations.push(
-        backupConfig.cloudEndpoint
-          ? `Cloud Vault (${backupConfig.cloudEndpoint.split('/')[2] || 'S3 Mirror'})`
-          : 'Cloud Offsite (Configured)'
-      );
-    }
-    if (backupConfig.destinations.emailDispatch) {
-      activeDestinations.push(`Email: ${backupConfig.notificationEmail || 'Active'}`);
-    }
+    if (backupConfig.destinations.localBrowser) activeDestinations.push('Local Browser Storage (IndexedDB)');
     if (backupConfig.destinations.autoDownload) {
       activeDestinations.push('Local Download Folder');
       (async () => {
@@ -1260,31 +1382,41 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         contentToParse = decResult.plaintextJson;
       }
 
-      const parsed = JSON.parse(contentToParse);
-      if (!parsed.products || !parsed.batches) {
+      const importRes = await importDataFromJson(contentToParse);
+      if (!importRes.success || !importRes.payload) {
         return {
           success: false,
-          message: 'Invalid pharmacy backup format: missing required products or batches arrays.',
+          message: importRes.message,
         };
       }
 
-      // Pre-restore rollback
+      const parsed = importRes.payload;
+
+      // Pre-restore safety snapshot before applying external archive
       triggerAutomatedBackup('PRE_RESTORE_ROLLBACK', 'Pre-restore safety snapshot before importing external archive');
 
-      if (Array.isArray(parsed.products)) setProducts(parsed.products);
-      if (Array.isArray(parsed.batches)) setBatches(parsed.batches);
-      if (Array.isArray(parsed.invoices)) setInvoices(parsed.invoices);
-      if (Array.isArray(parsed.vendors)) setVendors(parsed.vendors);
-      if (Array.isArray(parsed.stockAuditLogs)) setStockAuditLogs(parsed.stockAuditLogs);
-      if (Array.isArray(parsed.dpdpLogs)) setDpdpLogs(parsed.dpdpLogs);
+      setProducts(parsed.products);
+      setBatches(parsed.batches);
+      setInvoices(parsed.invoices);
+      setVendors(parsed.vendors);
+      setStockAuditLogs(parsed.stockAuditLogs);
+      setDpdpLogs(parsed.dpdpLogs);
+      setPurchaseInvoices(parsed.purchaseInvoices);
+      setBackupSnapshots(parsed.backupSnapshots);
+      setDoctors(parsed.doctors);
+      setCustomers(parsed.customers);
+      setSalesReps(parsed.salesReps);
+      setRacks(parsed.racks);
+      setManufacturers(parsed.manufacturers);
+      setWantedBook(parsed.wantedBook);
+      setSalesReturns(parsed.salesReturns);
+
+      if (parsed.pharmacyAccount) {
+        setPharmacyAccount(parsed.pharmacyAccount);
+        setIsConfigured(true);
+      }
       if (parsed.printerSettings) setPrinterSettings(parsed.printerSettings);
-      if (Array.isArray(parsed.doctors)) setDoctors(parsed.doctors);
-      if (Array.isArray(parsed.customers)) setCustomers(parsed.customers);
-      if (Array.isArray(parsed.salesReps)) setSalesReps(parsed.salesReps);
-      if (Array.isArray(parsed.racks)) setRacks(parsed.racks);
-      if (Array.isArray(parsed.wantedBook)) setWantedBook(parsed.wantedBook);
-      if (Array.isArray(parsed.purchaseInvoices)) setPurchaseInvoices(parsed.purchaseInvoices);
-      if (Array.isArray(parsed.salesReturns)) setSalesReturns(parsed.salesReturns);
+      if (parsed.backupConfig) setBackupConfig(parsed.backupConfig);
 
       if (window.electronAPI) {
         window.electronAPI.restoreBackup(parsed);
@@ -1292,13 +1424,8 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       return {
         success: true,
-        message: `External database archive imported successfully (${parsed.products?.length || 0} products, ${parsed.batches?.length || 0} batches, ${parsed.invoices?.length || 0} invoices).`,
-        details: {
-          products: parsed.products?.length || 0,
-          batches: parsed.batches?.length || 0,
-          invoices: parsed.invoices?.length || 0,
-          vendors: parsed.vendors?.length || 0,
-        },
+        message: importRes.message,
+        details: importRes.details,
       };
     } catch (e: any) {
       return { success: false, message: `Failed to import archive: ${e?.message || 'Invalid format'}` };
@@ -1502,33 +1629,79 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     if (!product) return null;
 
-    // Pick active batch with available stock and closest valid expiry
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    // Pick active batch with available stock and closest valid (non-expired) expiry
     const matchingBatches = batches
-      .filter((b) => b.productId === product.id && b.totalTablets > 0)
+      .filter((b) => b.productId === product.id && b.totalTablets > 0 && new Date(b.expiryDate).getTime() >= now.getTime())
       .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
 
-    const activeBatch = matchingBatches[0] || batches.find((b) => b.productId === product.id);
+    const activeBatch = matchingBatches[0];
 
     return { product, activeBatch };
   };
 
   // Create Invoice and decrement stock at atomic tablet level with full audit trail
   const createInvoice = (newInvoice: Invoice): { success: boolean; error?: string } => {
-    // 1. Validate stock availability for all items
+    // 0. Collision check
+    if (!newInvoice.id || !newInvoice.invoiceNumber) {
+      return { success: false, error: 'Invoice must contain a valid ID and Invoice Number.' };
+    }
+    const hasCollision = invoices.some(
+      (inv) => inv.id === newInvoice.id || inv.invoiceNumber === newInvoice.invoiceNumber
+    );
+    if (hasCollision) {
+      return {
+        success: false,
+        error: `Identifier collision: An invoice with ID '${newInvoice.id}' or Number '${newInvoice.invoiceNumber}' already exists.`,
+      };
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const nowTimestamp = new Date().setHours(0, 0, 0, 0);
+
+    // 1. Block expired batches everywhere
     for (const item of newInvoice.items) {
-      const targetBatch = batches.find((b) => b.id === item.batch.id);
-      if (!targetBatch) {
-        return { success: false, error: `Batch not found for ${item.product.name}` };
-      }
-      if (targetBatch.totalTablets < item.totalTabletsSold) {
+      const targetBatch = batches.find((b) => b.id === item.batch.id) || item.batch;
+      const expDate = new Date(targetBatch.expiryDate);
+      expDate.setHours(0, 0, 0, 0);
+      if (expDate.getTime() < nowTimestamp || (targetBatch.expiryDate && targetBatch.expiryDate < todayStr)) {
         return {
           success: false,
-          error: `Insufficient stock in Batch ${targetBatch.batchNumber} for ${item.product.name}. Available: ${targetBatch.totalTablets} tablets, requested: ${item.totalTabletsSold} tablets.`,
+          error: `Cannot dispense expired stock: Batch ${targetBatch.batchNumber} for ${item.product.name} expired on ${targetBatch.expiryDate}.`,
         };
       }
     }
 
-    // 2. Generate stock audit log entries for each sold line item
+    // 2. Aggregate requested quantities per batch across ALL cart lines (handles duplicate cart lines for same batch)
+    const requestedPerBatch: Record<string, { totalTablets: number; batchNumber: string; productName: string }> = {};
+    for (const item of newInvoice.items) {
+      if (!requestedPerBatch[item.batch.id]) {
+        requestedPerBatch[item.batch.id] = {
+          totalTablets: 0,
+          batchNumber: item.batch.batchNumber,
+          productName: item.product.name,
+        };
+      }
+      requestedPerBatch[item.batch.id].totalTablets += item.totalTabletsSold;
+    }
+
+    // Validate aggregated stock availability
+    for (const [batchId, req] of Object.entries(requestedPerBatch)) {
+      const targetBatch = batches.find((b) => b.id === batchId);
+      if (!targetBatch) {
+        return { success: false, error: `Batch not found for ${req.productName}` };
+      }
+      if (targetBatch.totalTablets < req.totalTablets) {
+        return {
+          success: false,
+          error: `Insufficient stock in Batch ${targetBatch.batchNumber} for ${req.productName}. Total requested across cart: ${req.totalTablets} tablets, available: ${targetBatch.totalTablets} tablets.`,
+        };
+      }
+    }
+
+    // 3. Generate stock audit log entries for each sold line item
     const newAuditEntries: StockAuditLogEntry[] = [];
     newInvoice.items.forEach((item) => {
       const targetBatch = batches.find((b) => b.id === item.batch.id);
@@ -1575,29 +1748,29 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
     });
 
-    // 3. Decrement atomic tablets
+    // 4. Decrement atomic tablets atomically using aggregated counts
     setBatches((prevBatches) =>
       prevBatches.map((batch) => {
-        const itemSold = newInvoice.items.find((item) => item.batch.id === batch.id);
-        if (itemSold) {
+        const req = requestedPerBatch[batch.id];
+        if (req) {
           return {
             ...batch,
-            totalTablets: batch.totalTablets - itemSold.totalTabletsSold,
+            totalTablets: Math.max(0, batch.totalTablets - req.totalTablets),
           };
         }
         return batch;
       })
     );
 
-    // 4. Prepend stock audit entries
+    // 5. Prepend stock audit entries
     if (newAuditEntries.length > 0) {
       setStockAuditLogs((prev) => [...newAuditEntries, ...prev]);
     }
 
-    // 5. Append to completed invoices
+    // 6. Append to completed invoices
     setInvoices((prev) => [newInvoice, ...prev]);
 
-    // 6. Log DPDP Act compliance entry
+    // 7. Log DPDP Act compliance entry
     const maskedPhone = maskPhoneDPDP(newInvoice.prescription.patientContact);
     const dpdpEntry: DpdpLogEntry = {
       id: `dpdp_${Date.now()}`,
@@ -1605,7 +1778,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       patientPhoneMasked: maskedPhone,
       action: 'DISPENSED_PRESCRIPTION',
       operatorName: `${currentUser.name} (${currentUser.role})`,
-      purpose: `Billed Invoice #${newInvoice.invoiceNumber} for ${newInvoice.items.length} items. Consent: Verified.`,
+      purpose: `Billed Invoice #${newInvoice.invoiceNumber} for ${newInvoice.items.length} items. Consent: ${newInvoice.prescription.dpdpConsentAccepted ? 'Consented' : 'Standard'}.`,
     };
     setDpdpLogs((prev) => [dpdpEntry, ...prev]);
 
@@ -1881,6 +2054,24 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return updated;
     });
+
+    // Reconcile supplier balance due
+    if (newPurchase.vendorId) {
+      setVendors((prevVendors) =>
+        prevVendors.map((v) => {
+          if (v.id === newPurchase.vendorId) {
+            const currentBal = v.balanceDue ?? v.currentBalance ?? 0;
+            const updatedBal = Number((currentBal + (newPurchase.grandTotal || 0)).toFixed(2));
+            return {
+              ...v,
+              balanceDue: updatedBal,
+              currentBalance: updatedBal,
+            };
+          }
+          return v;
+        })
+      );
+    }
 
     // Inward stock to batches
     newPurchase.items.forEach((item) => {
@@ -2396,10 +2587,30 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     const dailyProfit = Math.max(0, dailyRevenue - dailyCost);
-    // Project monthly stats based on current inventory and run-rate
-    const monthlyRevenue = dailyRevenue * 26 + 145000; // Realistic retail projection
-    const monthlyProfit = dailyProfit * 26 + 38000;
-    const avgMargin = dailyRevenue > 0 ? (dailyProfit / dailyRevenue) * 100 : 26.5;
+
+    // Calculate monthly stats from actual saved records for current calendar month
+    const currentMonthPrefix = today.slice(0, 7);
+    const monthlyInvoices = invoices.filter(
+      (inv) => inv.status === 'COMPLETED' && inv.invoiceDate.startsWith(currentMonthPrefix)
+    );
+    let monthlyRevenue = 0;
+    let monthlyCost = 0;
+    monthlyInvoices.forEach((inv) => {
+      monthlyRevenue += inv.grandTotal;
+      inv.items.forEach((item) => {
+        const batch = batches.find((b) => b.id === item.batch.id) || item.batch;
+        const costPerTablet = (batch.costPricePerStrip || 20) / (item.product.stripSize || 10);
+        monthlyCost += costPerTablet * item.totalTabletsSold;
+      });
+    });
+
+    const monthlyProfit = Math.max(0, monthlyRevenue - monthlyCost);
+    const avgMargin =
+      monthlyRevenue > 0
+        ? Number(((monthlyProfit / monthlyRevenue) * 100).toFixed(1))
+        : dailyRevenue > 0
+        ? Number(((dailyProfit / dailyRevenue) * 100).toFixed(1))
+        : 0;
 
     // Low stock count
     const lowStockCount = batches.filter((b) => {

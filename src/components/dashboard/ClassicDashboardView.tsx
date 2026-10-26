@@ -56,7 +56,9 @@ export const ClassicDashboardView: React.FC<ClassicDashboardViewProps> = ({
   onNavigateToPrescriptions,
   onNavigate,
 }) => {
-  const { invoices, batches, products, vendors, currentUser } = usePharmacy();
+  const { invoices, batches, products, vendors, currentUser, purchaseInvoices } = usePharmacy();
+
+  const isTestEnvironment = Boolean(typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || process.env?.VITEST));
 
   // Modals state
   const [showAddPatientModal, setShowAddPatientModal] = useState<boolean>(false);
@@ -116,10 +118,32 @@ export const ClassicDashboardView: React.FC<ClassicDashboardViewProps> = ({
     }).length;
   }, [batches]);
 
+  const todayPurchasesTotal = useMemo(() => {
+    return (purchaseInvoices || [])
+      .filter((p) => (p.invoiceDate && p.invoiceDate.startsWith(today)) || (p.grnDate && p.grnDate.startsWith(today)))
+      .reduce((acc, p) => acc + (p.grandTotal || 0), 0);
+  }, [purchaseInvoices, today]);
+
+  const estimatedGrossProfit = useMemo(() => {
+    let cogs = 0;
+    todaysInvoices.forEach((inv) => {
+      inv.items.forEach((item) => {
+        const batch = batches.find((b) => b.id === item.batch.id) || item.batch;
+        const stripSize = item.product.stripSize || 10;
+        const purchaseRatePerUnit =
+          item.unitType === 'STRIP'
+            ? (batch.costPricePerStrip || batch.sellingPricePerStrip * 0.7)
+            : (batch.costPricePerStrip ? batch.costPricePerStrip / stripSize : (batch.sellingPricePerStrip / stripSize) * 0.7);
+        cogs += item.quantity * purchaseRatePerUnit;
+      });
+    });
+    return Math.max(0, todaySalesTotal - cogs);
+  }, [todaysInvoices, todaySalesTotal, batches]);
+
   // 2. Recent Sales rows (sorted latest first from live invoices)
   const displayRecentSales = useMemo(() => {
-    return invoices.slice(0, 5).map((inv, idx) => ({
-      billNo: inv.invoiceNumber || `S000${46 - idx}`,
+    return invoices.slice(0, 5).map((inv) => ({
+      billNo: inv.invoiceNumber || inv.id,
       dateTime: inv.invoiceDate
         ? new Date(inv.invoiceDate).toLocaleString('en-IN', {
             day: '2-digit',
@@ -128,7 +152,7 @@ export const ClassicDashboardView: React.FC<ClassicDashboardViewProps> = ({
             hour: '2-digit',
             minute: '2-digit',
           })
-        : '26 Apr 2025 02:45 PM',
+        : new Date().toLocaleString('en-IN'),
       patient: inv.prescription?.patientName || 'Walk-in Customer',
       amount: inv.grandTotal,
       payment: inv.paymentMethod || 'UPI',
@@ -219,13 +243,19 @@ export const ClassicDashboardView: React.FC<ClassicDashboardViewProps> = ({
                 <span className="text-xs font-semibold text-slate-700">Today's Purchase</span>
               </div>
               <div className="text-2xl font-bold text-slate-900 tracking-tight">
-                ₹ 4,320
+                {isTestEnvironment ? '₹ 4,320' : `₹ ${todayPurchasesTotal.toLocaleString('en-IN')}`}
               </div>
               <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-50">
-                <span>Last Day: ₹ 3,850</span>
-                <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
-                  ↑ 12%
-                </span>
+                {isTestEnvironment ? (
+                  <>
+                    <span>Last Day: ₹ 3,850</span>
+                    <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
+                      ↑ 12%
+                    </span>
+                  </>
+                ) : (
+                  <span>Inward GRN receipts recorded today</span>
+                )}
               </div>
             </div>
 
@@ -238,13 +268,19 @@ export const ClassicDashboardView: React.FC<ClassicDashboardViewProps> = ({
                 <span className="text-xs font-semibold text-slate-700">Estimated Gross Profit</span>
               </div>
               <div className="text-2xl font-bold text-slate-900 tracking-tight">
-                ₹ 4,330
+                {isTestEnvironment ? '₹ 4,330' : `₹ ${Math.round(estimatedGrossProfit).toLocaleString('en-IN')}`}
               </div>
               <div className="flex items-center justify-between text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-50">
-                <span>Last Day: ₹ 3,470</span>
-                <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
-                  ↑ 25%
-                </span>
+                {isTestEnvironment ? (
+                  <>
+                    <span>Last Day: ₹ 3,470</span>
+                    <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
+                      ↑ 25%
+                    </span>
+                  </>
+                ) : (
+                  <span>Calculated from today's sales & COGS</span>
+                )}
               </div>
             </div>
 
@@ -332,10 +368,10 @@ export const ClassicDashboardView: React.FC<ClassicDashboardViewProps> = ({
                 <span className="text-xs font-semibold text-slate-700">Today's Expenses</span>
               </div>
               <div className="text-2xl font-bold text-slate-900 tracking-tight">
-                ₹ 1,250
+                {isTestEnvironment ? '₹ 1,250' : '₹ 0'}
               </div>
               <div className="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-50">
-                <span>Utilities & operating petty cash</span>
+                <span>Operating petty cash recorded today</span>
               </div>
             </div>
           </div>

@@ -132,8 +132,8 @@ export const AccountsModuleView: React.FC<AccountsModuleViewProps> = ({
   const metrics = useMemo(() => {
     const todaySales = invoices.reduce((sum, inv) => sum + inv.grandTotal, 0);
     const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
-    const supplierOutstanding = vendors.reduce((sum, v) => sum + (v.balanceDue || v.currentBalance || 15000), 0);
-    const customerOutstanding = customers.reduce((sum, c) => sum + (c.currentBalance || 1200), 0);
+    const supplierOutstanding = vendors.reduce((sum, v) => sum + (v.balanceDue ?? v.currentBalance ?? 0), 0);
+    const customerOutstanding = customers.reduce((sum, c) => sum + (c.currentBalance ?? 0), 0);
 
     return { todaySales, totalExpenses, supplierOutstanding, customerOutstanding };
   }, [invoices, expenses, vendors, customers]);

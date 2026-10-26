@@ -1,7 +1,8 @@
 /**
  * CSV Export Utilities for Jeeva Pharmacy
- * Generates formatted CSV files tailored for Indian CA audits, GSTR-1 tax preparation,
+ * Generates formatted CSV files tailored for Indian CA audits, GSTR-1 & GSTR-2B tax preparation,
  * and annual physical inventory valuation.
+ * Hardened against Spreadsheet Formula Injection (CSV Injection).
  */
 
 import {
@@ -14,16 +15,25 @@ import {
   calculateExpiryZone,
   maskPhoneDPDP,
 } from '../types/pharmacy';
+import { InwardPurchaseInvoice } from '../types/shopaid';
 
-// Helper to escape CSV cell content properly
-function escapeCsvCell(value: string | number | boolean | null | undefined): string {
+/**
+ * Escapes CSV cell content properly while neutralizing potential Spreadsheet Formula Injection
+ * (OWASP CSV / Formula Injection via '=', '+', '-', '@', '\t', '\r').
+ */
+export function escapeCsvCell(value: string | number | boolean | null | undefined): string {
   if (value === null || value === undefined) return '""';
-  const str = String(value).replace(/"/g, '""');
-  // If string contains comma, quote, or newline, wrap in quotes
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return `"${str}"`;
+  let str = String(value);
+
+  // Prevent Spreadsheet Formula Injection:
+  // If the cell begins with '=', '+', '-', '@', '\t', or '\r', prefix with a single quote '
+  // so spreadsheet applications (Excel, LibreOffice, Google Sheets) treat it purely as text.
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
   }
-  return `"${str}"`;
+
+  const escaped = str.replace(/"/g, '""');
+  return `"${escaped}"`;
 }
 
 // Download helper creating a blob and triggering browser download
@@ -128,7 +138,7 @@ export function exportSalesLedgerCsv(invoices: Invoice[]) {
   const todayStr = new Date().toISOString().split('T')[0];
   const fileName = `Jeeva_Pharmacy_Sales_Ledger_GSTR1_${todayStr}.csv`;
   triggerDownload(csvContent, fileName);
-  return { fileName, rowCount: rows.length };
+  return { fileName, rowCount: rows.length, csvContent };
 }
 
 /**
@@ -226,12 +236,85 @@ export function exportInventoryValuationCsv(products: Product[], batches: Batch[
 
 /**
  * Export Purchase & Inward Stock Ledger (GSTR-2B Input Tax Credit Reconciliation)
+ * Reflects actual saved purchase transactions when available.
  */
 export function exportPurchaseLedgerCsv(
   vendors: Vendor[],
   batches: Batch[],
-  products: Product[]
+  products: Product[],
+  purchaseInvoices?: InwardPurchaseInvoice[]
 ) {
+  // If actual stored purchase invoices exist, export from actual records
+  if (purchaseInvoices && purchaseInvoices.length > 0) {
+    const headers = [
+      'GRN Number',
+      'GRN Date',
+      'Vendor Invoice No',
+      'Invoice Date',
+      'Distributor / Wholesaler',
+      'Wholesaler GSTIN',
+      'Medicine Name',
+      'Generic Composition',
+      'HSN Code',
+      'Batch Number',
+      'Expiry Date',
+      'Strips Inwarded',
+      'Free Strips',
+      'Cost Price / Strip (INR)',
+      'MRP / Strip (INR)',
+      'Taxable Value (INR)',
+      'GST Rate (%)',
+      'CGST (INR)',
+      'SGST (INR)',
+      'IGST (INR)',
+      'Line Total (INR)',
+      'Payment Status',
+    ];
+
+    const rows: string[][] = [];
+
+    purchaseInvoices.forEach((po) => {
+      const vendor = vendors.find((v) => v.id === po.vendorId);
+      po.items.forEach((item) => {
+        rows.push([
+          po.grnNumber,
+          po.grnDate,
+          po.vendorInvoiceNo,
+          po.invoiceDate,
+          po.vendorName || vendor?.companyName || 'Distributor',
+          vendor?.gstin || 'Unspecified',
+          item.productName,
+          item.genericComposition,
+          item.hsnCode,
+          item.batchNumber,
+          item.expiryDate,
+          String(item.quantityStrips),
+          String(item.freeStrips),
+          item.costPricePerStrip.toFixed(2),
+          item.mrpPerStrip.toFixed(2),
+          item.taxableAmount.toFixed(2),
+          `${item.gstRate}%`,
+          item.cgstAmount.toFixed(2),
+          item.sgstAmount.toFixed(2),
+          item.igstAmount.toFixed(2),
+          item.lineTotal.toFixed(2),
+          po.paymentStatus,
+        ]);
+      });
+    });
+
+    const csvContent = [
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map((row) => row.map(escapeCsvCell).join(',')),
+    ].join('\r\n');
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const fileName = `Jeeva_Pharmacy_Purchase_Ledger_GSTR2B_${todayStr}.csv`;
+    triggerDownload(csvContent, fileName);
+    return { fileName, rowCount: rows.length, csvContent };
+  }
+
+  // Fallback to batches
   const headers = [
     'Primary Wholesaler',
     'Wholesaler GSTIN',
@@ -256,10 +339,10 @@ export function exportPurchaseLedgerCsv(
 
   const rows: string[][] = [];
 
-  batches.forEach((batch, idx) => {
-    const product = products.find((p) => p.id === batch.productId);
+  (batches || []).forEach((batch) => {
+    const product = (products || []).find((p) => p.id === batch.productId);
     if (!product) return;
-    const vendor = vendors[idx % vendors.length] || vendors[0];
+    const vendor = (vendors || []).find((v) => v.id === batch.vendorId) || (vendors || [])[0];
 
     const stripSize = product.stripSize || 10;
     const strips = Math.ceil(batch.totalTablets / stripSize);
@@ -272,7 +355,7 @@ export function exportPurchaseLedgerCsv(
     const totalAmount = Number((taxableVal + totalItc).toFixed(2));
 
     rows.push([
-      vendor?.companyName || 'Local Drug Distributor',
+      vendor?.companyName || 'Registered Wholesaler',
       vendor?.gstin || '33AAAAA0000A1Z5',
       vendor?.phone || '+91 94440 00000',
       product.name,
@@ -302,7 +385,7 @@ export function exportPurchaseLedgerCsv(
   const todayStr = new Date().toISOString().split('T')[0];
   const fileName = `Jeeva_Pharmacy_Purchase_Ledger_GSTR2B_${todayStr}.csv`;
   triggerDownload(csvContent, fileName);
-  return { fileName, rowCount: rows.length };
+  return { fileName, rowCount: rows.length, csvContent };
 }
 
 /**
@@ -372,4 +455,3 @@ export function exportStockAuditLogCsv(auditLogs: StockAuditLogEntry[]) {
   triggerDownload(csvContent, fileName);
   return { fileName, rowCount: rows.length };
 }
-

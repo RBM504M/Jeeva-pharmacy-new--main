@@ -91,7 +91,7 @@ export const PosBillingView: React.FC = () => {
     doctorName: '',
     doctorRegNumber: '',
     notes: '',
-    dpdpConsentAccepted: true,
+    dpdpConsentAccepted: false,
   });
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('UPI');
@@ -376,10 +376,22 @@ export const PosBillingView: React.FC = () => {
   };
 
   const updateCartItemBatch = (cartItemId: string, newBatchId: string) => {
+    const candidateBatch = batches.find((b) => b.id === newBatchId);
+    if (!candidateBatch) return;
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const expDate = new Date(candidateBatch.expiryDate);
+    expDate.setHours(0, 0, 0, 0);
+    if (expDate.getTime() < now.getTime()) {
+      alert(`Cannot switch to expired batch ${candidateBatch.batchNumber} (Expired on: ${candidateBatch.expiryDate}).`);
+      return;
+    }
+
     setCartItems((prev) =>
       prev.map((item) => {
         if (item.cartItemId !== cartItemId) return item;
-        const newBatch = batches.find((b) => b.id === newBatchId) || item.batch;
+        const newBatch = candidateBatch;
         const stripSize = item.product.stripSize || 10;
         const unitPrice =
           item.unitType === 'STRIP'
@@ -470,7 +482,7 @@ export const PosBillingView: React.FC = () => {
           doctorName: parsedRx.doctorName || prev.doctorName,
           doctorRegNumber: parsedRx.doctorRegNumber || prev.doctorRegNumber,
           notes: parsedRx.notes || parsedRx.diagnosis || prev.notes,
-          dpdpConsentAccepted: true,
+          dpdpConsentAccepted: false,
         }));
 
         setScannedRxDetails(parsedRx);
@@ -497,9 +509,13 @@ export const PosBillingView: React.FC = () => {
           }
 
           if (matchedProduct) {
-            const availableBatch = batches.find(
-              (b) => b.productId === matchedProduct!.id && b.totalTablets >= med.quantity
-            ) || batches.find((b) => b.productId === matchedProduct!.id && b.totalTablets > 0);
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+            const validBatches = batches.filter(
+              (b) => b.productId === matchedProduct!.id && b.totalTablets > 0 && new Date(b.expiryDate).getTime() >= now.getTime()
+            );
+            const availableBatch =
+              validBatches.find((b) => b.totalTablets >= med.quantity) || validBatches[0];
 
             if (availableBatch) {
               const unitType = med.unitType || med.unit || 'STRIP';
@@ -518,7 +534,11 @@ export const PosBillingView: React.FC = () => {
             `Rx loaded (${addedCount} matched). Out of stock / uncatalogued: ${unfulfilledMeds.join(', ')}`
           );
         } else {
-          setScanNotification(`✓ E-Prescription loaded from ${parsedRx.doctorName || 'Doctor'} (${addedCount} items added)`);
+          setScanNotification(
+            parsedRx.untrustedPayload
+              ? `[UNVERIFIED QR] Loaded ${addedCount} items. Pharmacist verification & patient consent required.`
+              : `✓ Prescription loaded (${addedCount} items added)`
+          );
         }
         setTimeout(() => setScanNotification(null), 6000);
         return;
@@ -607,6 +627,11 @@ export const PosBillingView: React.FC = () => {
       return;
     }
 
+    if (prescription.patientContact.trim().length > 0 && !prescription.dpdpConsentAccepted) {
+      setCheckoutError('Patient consent must be explicitly recorded when capturing contact numbers under DPDP regulations.');
+      return;
+    }
+
     const hasScheduleH1 = cartItems.some((item) => item.product.drugSchedule === 'SCHEDULE_H1');
     if (hasScheduleH1 && !prescription.doctorRegNumber?.trim()) {
       setCheckoutError(
@@ -628,7 +653,7 @@ export const PosBillingView: React.FC = () => {
     const nextSeq = maxSeq + 1;
     const invoiceNumber = `JP/${fy}/${String(nextSeq).padStart(4, '0')}`;
     const newInvoice: Invoice = {
-      id: `inv_${Date.now()}`,
+      id: `inv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       invoiceNumber,
       invoiceDate: new Date().toISOString(),
       isInterState,
@@ -673,7 +698,7 @@ export const PosBillingView: React.FC = () => {
       doctorName: '',
       doctorRegNumber: '',
       notes: '',
-      dpdpConsentAccepted: true,
+      dpdpConsentAccepted: false,
     });
     setCheckoutError(null);
   };
@@ -695,39 +720,63 @@ export const PosBillingView: React.FC = () => {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-slate-500 font-semibold">Fast-Moving:</span>
-            <button
-              type="button"
-              onClick={() => {
-                const p = products.find((prod) => prod.name.toLowerCase().includes('paracetamol')) || products[0];
-                const b = batches.find((batch) => batch.productId === p?.id && batch.totalTablets > 0) || batches[0];
-                if (p && b) addItemToCart(p, b, 'STRIP', 1);
-              }}
-              className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-[11px] font-medium cursor-pointer transition-colors"
-            >
-              Dolo 650 Tablets
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const p = products.find((prod) => prod.name.toLowerCase().includes('azithromycin')) || products[1];
-                const b = batches.find((batch) => batch.productId === p?.id && batch.totalTablets > 0) || batches[1];
-                if (p && b) addItemToCart(p, b, 'STRIP', 1);
-              }}
-              className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded text-[11px] font-medium cursor-pointer transition-colors"
-            >
-              Azithromycin 500mg
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const p = products.find((prod) => prod.name.toLowerCase().includes('metformin')) || products[2];
-                const b = batches.find((batch) => batch.productId === p?.id && batch.totalTablets > 0) || batches[2];
-                if (p && b) addItemToCart(p, b, 'STRIP', 1);
-              }}
-              className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded text-[11px] font-medium cursor-pointer transition-colors"
-            >
-              Metformin 500mg
-            </button>
+            {products.length === 0 ? (
+              <span className="text-[11px] text-slate-400 italic">No inventory loaded yet</span>
+            ) : (
+              <>
+                {products.find((prod) => prod.name.toLowerCase().includes('dolo') || prod.name.toLowerCase().includes('paracetamol')) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const p = products.find((prod) => prod.name.toLowerCase().includes('dolo') || prod.name.toLowerCase().includes('paracetamol'));
+                      if (!p) return;
+                      const now = new Date();
+                      now.setHours(0, 0, 0, 0);
+                      const b = batches.find((batch) => batch.productId === p.id && batch.totalTablets > 0 && new Date(batch.expiryDate).getTime() >= now.getTime());
+                      if (b) addItemToCart(p, b, 'STRIP', 1);
+                      else alert(`No non-expired batch available for ${p.name}`);
+                    }}
+                    className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded text-[11px] font-medium cursor-pointer transition-colors"
+                  >
+                    Dolo 650 Tablets
+                  </button>
+                )}
+                {products.find((prod) => prod.name.toLowerCase().includes('azithromycin')) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const p = products.find((prod) => prod.name.toLowerCase().includes('azithromycin'));
+                      if (!p) return;
+                      const now = new Date();
+                      now.setHours(0, 0, 0, 0);
+                      const b = batches.find((batch) => batch.productId === p.id && batch.totalTablets > 0 && new Date(batch.expiryDate).getTime() >= now.getTime());
+                      if (b) addItemToCart(p, b, 'STRIP', 1);
+                      else alert(`No non-expired batch available for ${p.name}`);
+                    }}
+                    className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 rounded text-[11px] font-medium cursor-pointer transition-colors"
+                  >
+                    Azithromycin 500mg
+                  </button>
+                )}
+                {products.find((prod) => prod.name.toLowerCase().includes('metformin')) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const p = products.find((prod) => prod.name.toLowerCase().includes('metformin'));
+                      if (!p) return;
+                      const now = new Date();
+                      now.setHours(0, 0, 0, 0);
+                      const b = batches.find((batch) => batch.productId === p.id && batch.totalTablets > 0 && new Date(batch.expiryDate).getTime() >= now.getTime());
+                      if (b) addItemToCart(p, b, 'STRIP', 1);
+                      else alert(`No non-expired batch available for ${p.name}`);
+                    }}
+                    className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded text-[11px] font-medium cursor-pointer transition-colors"
+                  >
+                    Metformin 500mg
+                  </button>
+                )}
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-1 bg-white border border-slate-200 px-2 py-0.5 rounded">
@@ -846,6 +895,47 @@ export const PosBillingView: React.FC = () => {
           </span>
         </div>
       </div>
+
+      {/* Unverified Scanned Prescription Payload Banner */}
+      {scannedRxDetails && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs flex items-start justify-between gap-3 shadow-xs">
+          <div>
+            <div className="font-bold text-amber-900 flex items-center gap-1.5">
+              <span>⚠️ Scanned Digital Prescription Payload</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded font-mono font-bold">UNVERIFIED PAYLOAD</span>
+            </div>
+            <p className="text-amber-800 text-[11px] mt-1">
+              Client-only barcode/QR reading cannot establish legal physician identity or signature authenticity without PKI verification. The dispensing pharmacist must inspect the physical prescription, verify doctor credentials, and explicitly obtain patient DPDP consent.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setScannedRxDetails(null)}
+            className="text-amber-800 hover:text-amber-950 text-xs font-semibold px-2 py-1 bg-amber-100 hover:bg-amber-200 rounded cursor-pointer transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* First-Run Clean Inventory Guidance */}
+      {products.length === 0 && (
+        <div className="bg-sky-50 border border-sky-200 rounded-lg p-3.5 text-xs text-sky-900 flex items-center justify-between gap-4 shadow-xs">
+          <div>
+            <div className="font-bold text-sm text-sky-950">Clean Pharmacy Installation — No Stock Loaded</div>
+            <p className="text-sky-800 text-xs mt-0.5">
+              Your pharmacy database has started with zero sample records. To dispense medicines, inward batch stock from the Inward Stock menu or add products in the Product Catalog.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsLookupModalOpen(true)}
+            className="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white font-medium rounded text-xs shrink-0 cursor-pointer transition-colors"
+          >
+            Open Catalog (F2)
+          </button>
+        </div>
+      )}
 
       {/* Quick Search & Barcode Lookup Bar */}
       <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-xs">
@@ -1068,11 +1158,14 @@ export const PosBillingView: React.FC = () => {
                         >
                           {batches
                             .filter((b) => b.productId === item.product.id)
-                            .map((b) => (
-                              <option key={b.id} value={b.id}>
-                                {b.batchNumber} ({b.expiryDate})
-                              </option>
-                            ))}
+                            .map((b) => {
+                              const isExpired = new Date(b.expiryDate).getTime() < new Date().setHours(0, 0, 0, 0);
+                              return (
+                                <option key={b.id} value={b.id} disabled={isExpired}>
+                                  {b.batchNumber} ({b.expiryDate}){isExpired ? ' [EXPIRED]' : ''}
+                                </option>
+                              );
+                            })}
                         </select>
                       ) : (
                         <input
@@ -1603,8 +1696,22 @@ export const PosBillingView: React.FC = () => {
                 type="text"
                 value={prescription.patientContact}
                 onChange={(e) => setPrescription((prev) => ({ ...prev, patientContact: e.target.value }))}
+                placeholder="10-digit mobile number"
                 className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs font-mono"
               />
+            </div>
+
+            <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+              <input
+                id="pos-dpdp-consent"
+                type="checkbox"
+                checked={prescription.dpdpConsentAccepted}
+                onChange={(e) => setPrescription((prev) => ({ ...prev, dpdpConsentAccepted: e.target.checked }))}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+              />
+              <label htmlFor="pos-dpdp-consent" className="text-[11px] text-slate-600 cursor-pointer">
+                Explicit DPDP consent obtained for contact & prescription processing
+              </label>
             </div>
 
             <div className="flex items-center gap-2">

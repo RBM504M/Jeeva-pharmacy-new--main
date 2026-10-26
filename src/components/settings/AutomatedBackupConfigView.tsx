@@ -252,19 +252,19 @@ export const AutomatedBackupConfigView: React.FC<AutomatedBackupConfigViewProps>
               </div>
             </div>
 
-            {/* Card 2: Redundant Targets */}
+            {/* Card 2: Local Storage Targets */}
             <div className="bg-white border border-slate-200/90 rounded-md p-4 shadow-xs">
               <div className="flex items-center justify-between text-slate-400 mb-2">
                 <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  Active Redundancy
+                  Storage Targets
                 </span>
-                <Cloud className="w-4 h-4 text-sky-600" />
+                <HardDrive className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-base font-bold text-slate-900">
-                {Object.values(backupConfig.destinations).filter(Boolean).length} Target Mirrors
+                Local Storage Targets
               </div>
               <div className="text-[11px] text-slate-500 mt-1">
-                Vault, Cloud S3, & Pharmacist Email Dispatch.
+                IndexedDB Vault & Encrypted File Export.
               </div>
             </div>
 
@@ -417,23 +417,23 @@ export const AutomatedBackupConfigView: React.FC<AutomatedBackupConfigViewProps>
               </div>
             </div>
 
-            {/* Mirror 2: AWS S3 Offsite Vault */}
+            {/* Mirror 2: Direct Local File Export */}
             <div className="bg-white border border-slate-200/90 rounded-md p-5 shadow-xs space-y-3">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
-                  <Cloud className="w-4 h-4 text-sky-600" />
-                  <h4 className="font-bold text-slate-800 text-xs">Remote Offsite Cloud Mirror (AWS S3)</h4>
+                  <Download className="w-4 h-4 text-emerald-600" />
+                  <h4 className="font-bold text-slate-800 text-xs">Direct Local File Export (.enc.json)</h4>
                 </div>
-                <span className="px-2 py-0.5 bg-sky-50 text-sky-700 border border-sky-200 rounded text-[10px] font-semibold">
-                  S3 Asia-South1 (Mumbai)
+                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-semibold">
+                  Offline Device Storage
                 </span>
               </div>
               <p className="text-slate-500 text-xs leading-relaxed">
-                Automated night push to secure Indian cloud sovereign storage with geo-redundant disaster replication.
-                Protected under CDSCO clinical data protection guidelines.
+                Direct browser download of AES-256 encrypted backups directly to your local file system.
+                No external cloud servers, third-party S3 mirrors, or remote relays are used.
               </p>
               <div className="text-[11px] font-mono text-slate-600 bg-slate-50 p-2.5 rounded border border-slate-200 truncate">
-                Endpoint: {backupConfig.cloudEndpoint || 's3://in-south-pharmacy-vault.jeevapharmacy.in'}
+                Target: Local Storage / Downloads Folder
               </div>
             </div>
           </div>
@@ -623,54 +623,10 @@ export const AutomatedBackupConfigView: React.FC<AutomatedBackupConfigViewProps>
 
                 <label className="flex items-center justify-between p-3 rounded border border-slate-200 bg-white cursor-pointer hover:border-slate-300">
                   <div className="flex items-center gap-2">
-                    <Cloud className="w-4 h-4 text-sky-600" />
-                    <div>
-                      <div className="font-semibold text-slate-800">Offsite Cloud S3 Mirror</div>
-                      <div className="text-[11px] text-slate-500">Encrypted offsite cloud repository</div>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    disabled={!isEditing}
-                    checked={formData.destinations.cloudOffsite}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        destinations: { ...formData.destinations, cloudOffsite: e.target.checked },
-                      })
-                    }
-                    className="rounded text-emerald-600 focus:ring-emerald-500"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-3 rounded border border-slate-200 bg-white cursor-pointer hover:border-slate-300">
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-4 h-4 text-purple-600" />
-                    <div>
-                      <div className="font-semibold text-slate-800">Pharmacist Email Dispatch</div>
-                      <div className="text-[11px] text-slate-500">Sends nightly archive & audit summary</div>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    disabled={!isEditing}
-                    checked={formData.destinations.emailDispatch}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        destinations: { ...formData.destinations, emailDispatch: e.target.checked },
-                      })
-                    }
-                    className="rounded text-emerald-600 focus:ring-emerald-500"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between p-3 rounded border border-slate-200 bg-white cursor-pointer hover:border-slate-300">
-                  <div className="flex items-center gap-2">
-                    <Download className="w-4 h-4 text-amber-600" />
+                    <Download className="w-4 h-4 text-emerald-600" />
                     <div>
                       <div className="font-semibold text-slate-800">Automatic File Download</div>
-                      <div className="text-[11px] text-slate-500">Auto-downloads .enc archive to local folder</div>
+                      <div className="text-[11px] text-slate-500">Auto-downloads .enc.json archive directly to your device</div>
                     </div>
                   </div>
                   <input
@@ -688,31 +644,12 @@ export const AutomatedBackupConfigView: React.FC<AutomatedBackupConfigViewProps>
                 </label>
               </div>
 
-              {/* Destination Specific Inputs */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+              {/* Client-Only Architecture Statement */}
+              <div className="mt-3 p-3.5 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600 leading-relaxed flex items-start gap-2.5">
+                <HardDrive className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    Offsite S3 Bucket URI
-                  </label>
-                  <input
-                    type="text"
-                    disabled={!isEditing}
-                    value={formData.cloudEndpoint || ''}
-                    onChange={(e) => setFormData({ ...formData, cloudEndpoint: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded font-mono text-xs text-slate-800 disabled:bg-slate-50"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    Supervising Pharmacist Email
-                  </label>
-                  <input
-                    type="email"
-                    disabled={!isEditing}
-                    value={formData.notificationEmail}
-                    onChange={(e) => setFormData({ ...formData, notificationEmail: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded text-xs text-slate-800 disabled:bg-slate-50"
-                  />
+                  <span className="font-bold text-slate-800 block mb-0.5">Standalone Local Storage Architecture</span>
+                  All database archives are generated, encrypted, and saved locally inside your browser / device. Remote cloud mirroring, AWS S3 buckets, and third-party email relays are disabled in this client-only offline installation to ensure zero unconsented data transmission.
                 </div>
               </div>
             </div>

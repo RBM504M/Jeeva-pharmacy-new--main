@@ -774,12 +774,12 @@ export const DEFAULT_BACKUP_CONFIG: AutomatedBackupConfig = {
   triggerOnBulkInward: true,
   destinations: {
     localBrowser: true,
-    autoDownload: false,
-    cloudOffsite: true,
-    emailDispatch: true,
+    autoDownload: true,
+    cloudOffsite: false,
+    emailDispatch: false,
   },
-  cloudEndpoint: 's3://in-south-pharmacy-vault.jeevapharmacy.in/chennai-retail-01',
-  notificationEmail: 'pharmacist@jeevapharmacy.in',
+  cloudEndpoint: '',
+  notificationEmail: '',
   retentionDays: 2920, // 8 Years Statutory under Indian IT Act Section 44AA & GST Rule 56
   isEncrypted: true,
   encryptionAlgorithm: 'AES-256-GCM',
@@ -794,10 +794,10 @@ export const DEFAULT_BACKUP_CONFIG: AutomatedBackupConfig = {
     dpdpLogs: true,
     printerSettings: true,
   },
-  lastBackupTimestamp: new Date(Date.now() - 1000 * 3600 * 9).toISOString(),
-  lastBackupStatus: 'SUCCESS',
-  lastBackupChecksum: 'sha256:7f8a92bc4e10d8a43928e10034a71b489c623910ee2b',
-  lastBackupSizeBytes: 148200,
+  lastBackupTimestamp: undefined,
+  lastBackupStatus: undefined,
+  lastBackupChecksum: undefined,
+  lastBackupSizeBytes: 0,
 };
 
 export const SEED_BACKUP_SNAPSHOTS: BackupSnapshot[] = [

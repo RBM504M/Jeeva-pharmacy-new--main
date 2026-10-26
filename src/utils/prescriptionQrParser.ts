@@ -1,7 +1,7 @@
 /**
  * Digital Pharmacy Prescription QR Code Parser
- * Compliant with Indian ABDM (Ayushman Bharat Digital Mission), e-Sanjeevani,
- * and hospital digital e-prescription QR formats.
+ * Validates external QR payloads while treating all unverified scanned payloads as untrusted.
+ * No fabricated patient, doctor, or consent defaults are introduced.
  */
 
 export interface PrescribedMedicine {
@@ -29,6 +29,9 @@ export interface ParsedDigitalPrescription {
   diagnosis?: string;
   notes?: string;
   dpdpConsentAccepted: boolean;
+  isVerified: boolean;
+  untrustedPayload: boolean;
+  verificationNotice: string;
   medicines: PrescribedMedicine[];
   rawPayload: string;
 }
@@ -53,6 +56,7 @@ export function isPrescriptionQr(payload: string): boolean {
       if (
         obj.rxType ||
         obj.prescriptionId ||
+        obj.rxId ||
         obj.patient ||
         obj.doctor ||
         obj.medicines ||
@@ -63,7 +67,7 @@ export function isPrescriptionQr(payload: string): boolean {
         return true;
       }
     } catch {
-      // not valid JSON
+      return false;
     }
   }
 
@@ -74,7 +78,8 @@ export function isPrescriptionQr(payload: string): boolean {
     str.startsWith('nhm://') ||
     str.includes('eprescription?') ||
     str.startsWith('RX|') ||
-    str.startsWith('ABDM-RX|')
+    str.startsWith('ABDM-RX|') ||
+    str.startsWith('ABDM|')
   ) {
     return true;
   }
@@ -95,11 +100,16 @@ export function isPrescriptionQr(payload: string): boolean {
 }
 
 /**
- * Parses raw scanned QR string into structured ParsedDigitalPrescription
+ * Parses raw scanned QR string into structured ParsedDigitalPrescription.
+ * Does NOT fabricate patient names, doctor identities, or consent.
+ * Always marks payloads as unverified external input.
  */
 export function parsePrescriptionQr(payload: string): ParsedDigitalPrescription | null {
   if (!payload) return null;
   const str = payload.trim();
+
+  const baseNotice =
+    'Unverified external QR payload. Prescriber identity, registration number, prescription authenticity, and patient consent must be verified manually by the pharmacist.';
 
   // 1. Try parsing JSON format (ABDM Standard)
   if (str.startsWith('{') && str.endsWith('}')) {
@@ -115,36 +125,45 @@ export function parsePrescriptionQr(payload: string): ParsedDigitalPrescription 
         : [];
 
       const medicines: PrescribedMedicine[] = rawMeds.map((m: any) => ({
-        name: m.name || m.medicineName || m.drugName || 'Prescribed Medicine',
+        name: String(m.name || m.medicineName || m.drugName || '').trim(),
         barcode: m.barcode || m.ean || m.hsn || undefined,
-        dosage: m.dosage || m.frequency || m.sig || '1-0-1 as directed',
-        quantity: Number(m.quantity || m.qty || 1),
+        dosage: m.dosage || m.frequency || m.sig || undefined,
+        quantity: Math.max(1, Number(m.quantity || m.qty || 1)),
         unitType: String(m.unit || m.unitType || 'STRIP').toUpperCase() === 'TABLET' ? 'TABLET' : 'STRIP',
         notes: m.notes || m.duration || undefined,
-      }));
+      })).filter((m) => m.name.length > 0);
+
+      const patientName = String(patient.name || data.patientName || '').trim();
+      const patientContact = String(patient.phone || patient.contact || data.patientContact || '').trim();
+      const doctorName = String(doctor.name || data.doctorName || '').trim();
+      const doctorRegNumber = String(doctor.regNo || doctor.registrationNumber || data.doctorRegNumber || '').trim();
 
       return {
-        rxId: data.prescriptionId || data.rxId || `RX-${Date.now().toString().slice(-6)}`,
-        issueDate: data.date || data.issueDate || new Date().toISOString().split('T')[0],
-        patientName: patient.name || data.patientName || 'Digital OPD Patient',
-        patientContact: String(patient.phone || patient.contact || data.patientContact || '9840000000'),
+        rxId: String(data.prescriptionId || data.rxId || `RX-${Date.now().toString().slice(-6)}`),
+        issueDate: String(data.date || data.issueDate || new Date().toISOString().split('T')[0]),
+        patientName,
+        patientContact,
         patientAge: patient.age ? Number(patient.age) : undefined,
         patientGender: patient.gender ? (String(patient.gender).toUpperCase() as any) : undefined,
-        doctorName: doctor.name || data.doctorName || 'Dr. Registered Physician, MD',
-        doctorRegNumber: doctor.regNo || doctor.registrationNumber || data.doctorRegNumber || 'TNMC-REG-2024',
-        clinicName: doctor.clinicName || doctor.hospital || data.clinicName || 'Digital Telemedicine Clinic',
-        diagnosis: data.diagnosis || data.chiefComplaint || 'Clinical Consultation',
-        notes: data.notes || data.instructions || 'Dispense as per doctor instructions',
-        dpdpConsentAccepted: true, // Digital QR carries signed digital patient consent
+        doctorName,
+        doctorRegNumber,
+        clinicName: String(doctor.clinicName || doctor.hospital || data.clinicName || '').trim() || undefined,
+        diagnosis: String(data.diagnosis || data.chiefComplaint || '').trim() || undefined,
+        notes: String(data.notes || data.instructions || '').trim() || undefined,
+        dpdpConsentAccepted: false, // Unverified QR cannot silently establish patient consent
+        isVerified: false,
+        untrustedPayload: true,
+        verificationNotice: baseNotice,
         medicines,
         rawPayload: str,
       };
     } catch (e) {
       console.warn('Failed parsing JSON prescription QR:', e);
+      return null;
     }
   }
 
-  // 2. Try URI Query Schema e.g. rx://eprescription?patient=Sundaram&dr=Dr.+Radhakrishnan
+  // 2. Try URI Query Schema e.g. rx://eprescription?patient=...&dr=...
   if (str.includes('?') && (str.startsWith('rx://') || str.startsWith('http') || str.startsWith('abdm://'))) {
     try {
       const queryString = str.split('?')[1];
@@ -154,16 +173,15 @@ export function parsePrescriptionQr(payload: string): ParsedDigitalPrescription 
       const medicines: PrescribedMedicine[] = [];
 
       if (medsParam) {
-        // format: "Dolo 650:2,Pantocid 40:1" or "8901117001234:2"
         medsParam.split(',').forEach((part) => {
           const [medNameOrBarcode, qtyStr] = part.split(':');
-          if (medNameOrBarcode) {
+          if (medNameOrBarcode && medNameOrBarcode.trim()) {
             medicines.push({
               name: medNameOrBarcode.trim(),
               barcode: /^\d{8,14}$/.test(medNameOrBarcode.trim()) ? medNameOrBarcode.trim() : undefined,
-              quantity: Number(qtyStr) || 1,
+              quantity: Math.max(1, Number(qtyStr) || 1),
               unitType: 'STRIP',
-              dosage: 'As prescribed',
+              dosage: undefined,
             });
           }
         });
@@ -172,20 +190,24 @@ export function parsePrescriptionQr(payload: string): ParsedDigitalPrescription 
       return {
         rxId: params.get('rxId') || `RX-${Date.now().toString().slice(-6)}`,
         issueDate: params.get('date') || new Date().toISOString().split('T')[0],
-        patientName: params.get('patient') || params.get('patientName') || 'Digital OPD Patient',
-        patientContact: params.get('phone') || params.get('contact') || '9840112345',
+        patientName: (params.get('patient') || params.get('patientName') || '').trim(),
+        patientContact: (params.get('phone') || params.get('contact') || '').trim(),
         patientAge: params.get('age') ? Number(params.get('age')) : undefined,
-        doctorName: params.get('doctor') || params.get('dr') || 'Dr. Medical Officer',
-        doctorRegNumber: params.get('reg') || params.get('regNo') || 'MCI-STATE-REG',
-        clinicName: params.get('clinic') || 'Ayushman Bharat Digital Health Centre',
-        diagnosis: params.get('diagnosis') || 'OPD Medical Consultation',
-        notes: params.get('notes') || 'Digital E-Prescription verified',
-        dpdpConsentAccepted: true,
+        doctorName: (params.get('doctor') || params.get('dr') || '').trim(),
+        doctorRegNumber: (params.get('reg') || params.get('regNo') || '').trim(),
+        clinicName: (params.get('clinic') || '').trim() || undefined,
+        diagnosis: (params.get('diagnosis') || '').trim() || undefined,
+        notes: (params.get('notes') || '').trim() || undefined,
+        dpdpConsentAccepted: false,
+        isVerified: false,
+        untrustedPayload: true,
+        verificationNotice: baseNotice,
         medicines,
         rawPayload: str,
       };
     } catch (e) {
       console.warn('Failed parsing URI prescription QR:', e);
+      return null;
     }
   }
 
@@ -206,12 +228,12 @@ export function parsePrescriptionQr(payload: string): ParsedDigitalPrescription 
     if (map['meds']) {
       map['meds'].split(';').forEach((m) => {
         const [mName, mQty] = m.split(':');
-        if (mName) {
+        if (mName && mName.trim()) {
           medicines.push({
             name: mName.trim(),
-            quantity: Number(mQty) || 1,
+            quantity: Math.max(1, Number(mQty) || 1),
             unitType: 'STRIP',
-            dosage: 'As directed',
+            dosage: undefined,
           });
         }
       });
@@ -220,12 +242,16 @@ export function parsePrescriptionQr(payload: string): ParsedDigitalPrescription 
     return {
       rxId: map['rxid'] || `RX-${Date.now().toString().slice(-6)}`,
       issueDate: map['date'] || new Date().toISOString().split('T')[0],
-      patientName: map['patient'] || 'OPD Patient',
-      patientContact: map['phone'] || '9840012345',
-      doctorName: map['doctor'] || map['dr'] || 'Dr. Attending Physician',
-      doctorRegNumber: map['reg'] || 'MCI-00123',
-      diagnosis: map['diag'] || 'Clinical Consultation',
-      dpdpConsentAccepted: true,
+      patientName: (map['patient'] || '').trim(),
+      patientContact: (map['phone'] || '').trim(),
+      doctorName: (map['doctor'] || map['dr'] || '').trim(),
+      doctorRegNumber: (map['reg'] || '').trim(),
+      diagnosis: (map['diag'] || '').trim() || undefined,
+      notes: (map['notes'] || '').trim() || undefined,
+      dpdpConsentAccepted: false,
+      isVerified: false,
+      untrustedPayload: true,
+      verificationNotice: baseNotice,
       medicines,
       rawPayload: str,
     };
@@ -235,7 +261,6 @@ export function parsePrescriptionQr(payload: string): ParsedDigitalPrescription 
 }
 
 /**
- * Empty sample prescription list (sample data purged for production)
+ * Empty sample prescription list (sample data purged for customer installations)
  */
 export const SAMPLE_PRESCRIPTION_QRS: Array<{ label: string; doctor: string; patient: string; payload: string }> = [];
-

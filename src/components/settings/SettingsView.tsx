@@ -362,9 +362,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs space-y-4 text-xs">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
             <Lock className="w-5 h-5 text-amber-600" />
-            <h2 className="text-sm font-bold text-slate-900">Role-Based Access Control (RBAC) Matrix</h2>
+            <h2 className="text-sm font-bold text-slate-900">Role-Based Workflow Controls (Convenience Matrix)</h2>
           </div>
-          <p className="text-slate-500">Privileges granted to Chief Pharmacist (Admin) versus Billing Counter Assistant.</p>
+          <p className="text-slate-500">Interface and workflow privileges for Chief Pharmacist (Admin) versus Billing Counter Assistant.</p>
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-[11px] text-amber-900 leading-relaxed">
+            <strong>Client-Side Role Controls Notice:</strong> In this client-only standalone deployment, roles function as local workflow and UI convenience controls to streamline cashier and inventory tasks. They do not constitute server-enforced, cryptographically tamper-proof authentication.
+          </div>
           <div className="border border-slate-200 rounded-lg overflow-hidden">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
