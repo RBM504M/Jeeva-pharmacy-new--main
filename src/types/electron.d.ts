@@ -54,6 +54,12 @@ export interface ElectronAPI {
   getPurchaseReceipts: () => Promise<InwardPurchaseInvoice[]>;
   postSalesReturn: (payload: any) => Promise<{ success: boolean; error?: string; returnRecord?: any; batches?: Batch[]; invoice?: Invoice }>;
   getSalesReturns: () => Promise<any[]>;
+  getScheduleRegister: (options?: { drugSchedule?: string; fromDate?: string; toDate?: string; limit?: number; offset?: number }) => Promise<{ totalCount: number; page: number; rows: any[] }>;
+  exportScheduleRegisterCsv: (options?: { drugSchedule?: string; fromDate?: string; toDate?: string }) => Promise<string>;
+  getDpdpLogs: (filter?: { fromDate?: string; toDate?: string; limit?: number }) => Promise<DpdpLogEntry[]>;
+  createEncryptedBackup: (payload: { password: string; notes?: string }) => Promise<{ success: boolean; envelope?: any; error?: string; sha256Checksum?: string }>;
+  restoreEncryptedBackup: (payload: { envelope: any; password: string }) => Promise<{ success: boolean; error?: string }>;
+  getBackupSnapshots: () => Promise<BackupSnapshot[]>;
   printReceipt: (options?: { silent?: boolean; deviceName?: string }) => Promise<{ success: boolean; error?: string }>;
   getAppInfo: () => Promise<{
     version: string;

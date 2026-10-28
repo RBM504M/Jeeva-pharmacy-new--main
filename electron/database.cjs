@@ -13,6 +13,28 @@ function safeJsonParse(val, fallback = null) {
   }
 }
 
+function maskPhoneDPDP(phone) {
+  if (!phone) return 'XXXXXX';
+  let clean = String(phone).replace(/\D/g, '');
+  if (clean.startsWith('91') && clean.length > 10) {
+    clean = clean.slice(-10);
+  } else if (clean.startsWith('0') && clean.length === 11) {
+    clean = clean.slice(-10);
+  }
+  if (clean.length <= 4) return 'XXXXXX';
+  return `XXXXXX${clean.slice(-4)}`;
+}
+
+function escapeCsvCell(value) {
+  if (value === null || value === undefined) return '""';
+  let str = String(value);
+  // Neutralize Spreadsheet Formula Injection (OWASP CSV Injection)
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
 function hashPassword(password, salt = null) {
   const actualSalt = salt || crypto.randomBytes(16).toString('hex');
   const iterations = 100000;
@@ -571,6 +593,41 @@ class PharmacyDatabase {
     return this.db.prepare('SELECT * FROM pharmacy_accounts ORDER BY createdAt ASC LIMIT 1').get() || null;
   }
 
+  savePharmacyAccount(account) {
+    if (!account || !account.id || !account.name) {
+      return { success: false, error: 'Pharmacy id and name are required.' };
+    }
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO pharmacy_accounts (id, name, dlNumber, gstin, address, phone, email, state, pincode, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        dlNumber = excluded.dlNumber,
+        gstin = excluded.gstin,
+        address = excluded.address,
+        phone = excluded.phone,
+        email = excluded.email,
+        state = excluded.state,
+        pincode = excluded.pincode,
+        updatedAt = excluded.updatedAt
+    `);
+    stmt.run(
+      account.id,
+      account.name.trim(),
+      (account.dlNumber || '').trim(),
+      (account.gstin || '').trim(),
+      account.address || '',
+      account.phone || '',
+      account.email || '',
+      account.state || 'Tamil Nadu',
+      account.pincode || '',
+      account.createdAt || now,
+      now
+    );
+    return { success: true };
+  }
+
   getUserById(id) {
     return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id) || null;
   }
@@ -893,13 +950,13 @@ class PharmacyDatabase {
     if (pharmacyId) {
       productsStmt = 'SELECT * FROM products WHERE pharmacyId = ? OR pharmacyId IS NULL';
       batchesStmt = 'SELECT b.* FROM batches b JOIN products p ON b.productId = p.id WHERE p.pharmacyId = ? OR p.pharmacyId IS NULL';
-      invoicesStmt = 'SELECT * FROM invoices WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY invoiceDate DESC';
+      invoicesStmt = 'SELECT * FROM invoices WHERE pharmacyId = ? ORDER BY invoiceDate DESC';
       vendorsStmt = 'SELECT * FROM vendors WHERE pharmacyId = ? OR pharmacyId IS NULL';
-      stockAuditLogsStmt = 'SELECT * FROM stock_audit_logs WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY timestamp DESC';
-      dpdpLogsStmt = 'SELECT * FROM dpdp_logs WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY timestamp DESC';
-      backupSnapshotsStmt = 'SELECT * FROM backup_snapshots WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY timestamp DESC';
-      purchaseReceiptsStmt = 'SELECT * FROM purchase_receipts WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY grnDate DESC, createdAt DESC';
-      salesReturnsStmt = 'SELECT * FROM sales_returns WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY date DESC, createdAt DESC';
+      stockAuditLogsStmt = 'SELECT * FROM stock_audit_logs WHERE pharmacyId = ? ORDER BY timestamp DESC';
+      dpdpLogsStmt = 'SELECT * FROM dpdp_logs WHERE pharmacyId = ? ORDER BY timestamp DESC';
+      backupSnapshotsStmt = 'SELECT * FROM backup_snapshots WHERE pharmacyId = ? ORDER BY timestamp DESC';
+      purchaseReceiptsStmt = 'SELECT * FROM purchase_receipts WHERE pharmacyId = ? ORDER BY grnDate DESC, createdAt DESC';
+      salesReturnsStmt = 'SELECT * FROM sales_returns WHERE pharmacyId = ? ORDER BY date DESC, createdAt DESC';
     }
 
     const products = (pharmacyId ? this.db.prepare(productsStmt).all(pharmacyId) : this.db.prepare(productsStmt).all()).map(p => ({
@@ -964,7 +1021,7 @@ class PharmacyDatabase {
   getAllSalesReturns(pharmacyId = null) {
     let stmt = 'SELECT * FROM sales_returns ORDER BY date DESC, createdAt DESC';
     if (pharmacyId) {
-      stmt = 'SELECT * FROM sales_returns WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY date DESC, createdAt DESC';
+      stmt = 'SELECT * FROM sales_returns WHERE pharmacyId = ? ORDER BY date DESC, createdAt DESC';
     }
     return (pharmacyId ? this.db.prepare(stmt).all(pharmacyId) : this.db.prepare(stmt).all()).map(r => ({
       ...r,
@@ -1018,6 +1075,31 @@ class PharmacyDatabase {
       now
     );
     return { success: true };
+  }
+
+  getProduct(id) {
+    const row = this.db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+    if (!row) return null;
+    return {
+      ...row,
+      isActive: Boolean(row.isActive),
+    };
+  }
+
+  getInvoice(id) {
+    const row = this.db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+    if (!row) return null;
+    return {
+      ...row,
+      isInterState: Boolean(row.isInterState),
+      prescription: safeJsonParse(row.prescriptionJson, {}),
+      items: safeJsonParse(row.itemsJson, []),
+      taxSlabBreakdowns: safeJsonParse(row.taxSlabBreakdownsJson, []),
+    };
+  }
+
+  createPurchaseReceipt(payload, pharmacyId = null) {
+    return this.postPurchaseReceipt(payload, {}, pharmacyId);
   }
 
   getBatchWithProduct(batchId) {
@@ -1570,7 +1652,44 @@ class PharmacyDatabase {
   }
 
   saveInvoice(invoice) {
-    return this.createInvoice(invoice);
+    if (Array.isArray(invoice.items) && invoice.items.length > 0) {
+      return this.createInvoice(invoice);
+    }
+    const now = new Date().toISOString();
+    const prescription = invoice.prescription || { patientName: invoice.customerName || 'Walk-in' };
+    const stmt = this.db.prepare(`
+      INSERT INTO invoices (
+        id, pharmacyId, invoiceNumber, invoiceDate, isInterState, prescriptionJson, itemsJson,
+        subtotal, totalCgst, totalSgst, totalIgst, totalTax, roundOff,
+        grandTotal, paymentMethod, status, cashierName, taxSlabBreakdownsJson, createdAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        invoiceNumber = excluded.invoiceNumber,
+        status = excluded.status,
+        grandTotal = excluded.grandTotal
+    `);
+    stmt.run(
+      invoice.id,
+      invoice.pharmacyId || null,
+      invoice.invoiceNumber,
+      invoice.invoiceDate || now,
+      invoice.isInterState ? 1 : 0,
+      typeof prescription === 'string' ? prescription : JSON.stringify(prescription),
+      typeof invoice.items === 'string' ? invoice.items : JSON.stringify(invoice.items || []),
+      Number(invoice.subtotal) || 0,
+      Number(invoice.totalCgst) || 0,
+      Number(invoice.totalSgst) || 0,
+      Number(invoice.totalIgst) || 0,
+      Number(invoice.totalTax) || 0,
+      Number(invoice.roundOff) || 0,
+      Number(invoice.grandTotal) || 0,
+      invoice.paymentMethod || 'CASH',
+      invoice.status || 'COMPLETED',
+      invoice.cashierName || 'Staff',
+      typeof invoice.taxSlabBreakdowns === 'string' ? invoice.taxSlabBreakdowns : JSON.stringify(invoice.taxSlabBreakdowns || []),
+      invoice.createdAt || invoice.invoiceDate || now
+    );
+    return { success: true };
   }
 
   cancelInvoice(invoiceId, reason, rollbackEntries = [], pharmacyId = null, operator = {}) {
@@ -2035,7 +2154,7 @@ class PharmacyDatabase {
     let stmt = 'SELECT * FROM purchase_receipts ORDER BY grnDate DESC, createdAt DESC';
     let params = [];
     if (pharmacyId) {
-      stmt = 'SELECT * FROM purchase_receipts WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY grnDate DESC, createdAt DESC';
+      stmt = 'SELECT * FROM purchase_receipts WHERE pharmacyId = ? ORDER BY grnDate DESC, createdAt DESC';
       params = [pharmacyId];
     }
     const rows = this.db.prepare(stmt).all(...params);
@@ -2935,20 +3054,182 @@ class PharmacyDatabase {
   }
 
   logDpdp(entry) {
+    if (!entry) return { success: false, error: 'DPDP entry payload is required.' };
+    const id = entry.id || `dpdp_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+    const now = entry.timestamp || new Date().toISOString();
+    const masked = maskPhoneDPDP(entry.patientPhoneMasked || entry.patientPhone || '');
     const stmt = this.db.prepare(`
       INSERT INTO dpdp_logs (id, pharmacyId, timestamp, patientPhoneMasked, action, operatorName, purpose)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      entry.id,
+      id,
       entry.pharmacyId || null,
-      entry.timestamp,
-      entry.patientPhoneMasked,
-      entry.action,
-      entry.operatorName,
-      entry.purpose
+      now,
+      masked,
+      entry.action || 'CONSENT_GRANTED',
+      entry.operatorName || 'System',
+      entry.purpose || 'Customer contact processing for statutory invoice generation'
     );
-    return { success: true };
+    return { success: true, id, patientPhoneMasked: masked };
+  }
+
+  getDpdpLogs(pharmacyId = null, fromDate = null, toDate = null, limit = 500) {
+    let query = 'SELECT * FROM dpdp_logs';
+    const conditions = [];
+    const params = [];
+
+    if (pharmacyId) {
+      conditions.push('pharmacyId = ?');
+      params.push(pharmacyId);
+    }
+    if (fromDate) {
+      conditions.push('timestamp >= ?');
+      params.push(fromDate);
+    }
+    if (toDate) {
+      conditions.push('timestamp <= ?');
+      params.push(toDate);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    query += ' ORDER BY timestamp DESC LIMIT ?';
+    params.push(Number(limit) || 500);
+
+    return this.db.prepare(query).all(...params);
+  }
+
+  getScheduleRegister({ drugSchedule = 'ALL', pharmacyId = null, fromDate = null, toDate = null, limit = 500, offset = 0 } = {}) {
+    let invoicesQuery = 'SELECT * FROM invoices WHERE status != ?';
+    const invParams = ['CANCELLED'];
+
+    if (pharmacyId) {
+      invoicesQuery += ' AND pharmacyId = ?';
+      invParams.push(pharmacyId);
+    }
+    if (fromDate) {
+      invoicesQuery += ' AND invoiceDate >= ?';
+      invParams.push(fromDate);
+    }
+    if (toDate) {
+      invoicesQuery += ' AND invoiceDate <= ?';
+      invParams.push(toDate);
+    }
+    invoicesQuery += ' ORDER BY invoiceDate DESC, invoiceNumber DESC';
+
+    const invRows = this.db.prepare(invoicesQuery).all(...invParams);
+    const scheduleRows = [];
+    let serialCounter = 1;
+
+    for (const inv of invRows) {
+      const prescription = safeJsonParse(inv.prescriptionJson, {});
+      const items = safeJsonParse(inv.itemsJson, []);
+
+      for (const item of items) {
+        const prod = this.db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId);
+        const sched = prod?.drugSchedule || item.product?.drugSchedule || 'OTC';
+
+        if (sched === 'OTC') continue;
+        if (drugSchedule !== 'ALL' && sched !== drugSchedule) continue;
+
+        let patientAddress = prescription.patientAddress || '';
+        if (!patientAddress && prescription.notes && prescription.notes.includes('Address:')) {
+          patientAddress = prescription.notes.replace('Address:', '').trim();
+        }
+        if (!patientAddress) {
+          patientAddress = 'Prescription on record';
+        }
+
+        const batch = this.db.prepare('SELECT * FROM batches WHERE id = ?').get(item.batchId);
+        const expiry = batch?.expiryDate || item.batch?.expiryDate || 'N/A';
+        const batchNum = batch?.batchNumber || item.batchNumber || item.batch?.batchNumber || 'N/A';
+
+        scheduleRows.push({
+          serialNo: serialCounter++,
+          itemId: item.id || item.cartItemId,
+          invoiceId: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          invoiceDate: inv.invoiceDate,
+          patientName: prescription.patientName || 'Customer',
+          patientAddress,
+          patientContactMasked: maskPhoneDPDP(prescription.patientContact),
+          doctorName: prescription.doctorName || 'Self / Unspecified RMP',
+          doctorRegNo: prescription.doctorRegNumber || prescription.doctorRegNo || 'N/A',
+          drugName: prod?.name || item.productName || item.product?.name,
+          genericComposition: prod?.genericComposition || item.product?.genericComposition || 'N/A',
+          schedule: sched,
+          quantitySold: Number(item.quantity) || 0,
+          unitType: item.unitType || 'STRIP',
+          totalTabletsSold: Number(item.totalTabletsSold) || (Number(item.quantity) * (Number(item.stripSize) || 10)),
+          batchNumber: batchNum,
+          expiryDate: expiry,
+          manufacturer: prod?.manufacturer || item.product?.manufacturer || 'N/A',
+          dispensingPharmacist: inv.cashierName || 'Staff',
+          paymentMode: inv.paymentMethod || 'CASH',
+        });
+      }
+    }
+
+    const startIndex = Number(offset) || 0;
+    const maxLimit = Number(limit) || 500;
+    const paginated = scheduleRows.slice(startIndex, startIndex + maxLimit);
+
+    return {
+      totalCount: scheduleRows.length,
+      page: Math.floor(startIndex / maxLimit) + 1,
+      rows: paginated,
+    };
+  }
+
+  exportScheduleRegisterCsv(options = {}) {
+    const { rows } = this.getScheduleRegister({ ...options, limit: 100000, offset: 0 });
+    const headers = [
+      'S.No.',
+      'Bill Number',
+      'Bill Date',
+      'Patient Name',
+      'Patient Residential Address',
+      'Patient Phone (DPDP Masked)',
+      'Prescribing Doctor (RMP)',
+      'Doctor Council Reg. No.',
+      'Drug Name & Strength',
+      'Generic Salt Composition',
+      'Schedule Category',
+      'Quantity Dispensed',
+      'Unit',
+      'Batch Number',
+      'Date of Expiry',
+      'Manufacturer',
+      'Dispensing Pharmacist / Cashier',
+      'Payment Mode',
+    ];
+
+    const lines = [headers.join(',')];
+    for (const r of rows) {
+      lines.push([
+        r.serialNo,
+        escapeCsvCell(r.invoiceNumber),
+        escapeCsvCell(r.invoiceDate ? r.invoiceDate.split('T')[0] : ''),
+        escapeCsvCell(r.patientName),
+        escapeCsvCell(r.patientAddress),
+        escapeCsvCell(r.patientContactMasked),
+        escapeCsvCell(r.doctorName),
+        escapeCsvCell(r.doctorRegNo),
+        escapeCsvCell(r.drugName),
+        escapeCsvCell(r.genericComposition),
+        escapeCsvCell(r.schedule),
+        r.quantitySold,
+        escapeCsvCell(r.unitType),
+        escapeCsvCell(r.batchNumber),
+        escapeCsvCell(r.expiryDate),
+        escapeCsvCell(r.manufacturer),
+        escapeCsvCell(r.dispensingPharmacist),
+        escapeCsvCell(r.paymentMode),
+      ].join(','));
+    }
+    return lines.join('\n');
   }
 
   saveSetting(key, value) {
@@ -2989,7 +3270,174 @@ class PharmacyDatabase {
     return { success: true };
   }
 
+  getBackupSnapshots(pharmacyId = null) {
+    let stmt = 'SELECT * FROM backup_snapshots ORDER BY timestamp DESC';
+    let params = [];
+    if (pharmacyId) {
+      stmt = 'SELECT * FROM backup_snapshots WHERE pharmacyId = ? ORDER BY timestamp DESC';
+      params = [pharmacyId];
+    }
+    return this.db.prepare(stmt).all(...params).map(s => ({
+      ...s,
+      isEncrypted: Boolean(s.isEncrypted),
+      recordCounts: safeJsonParse(s.recordCountsJson, {}),
+    }));
+  }
+
+  createBackup(pharmacyId = null) {
+    const data = this.getAllData(pharmacyId);
+    const dataJson = JSON.stringify(data);
+    const sha256 = crypto.createHash('sha256').update(dataJson).digest('hex');
+    const totalSizeKb = Number((Buffer.byteLength(dataJson) / 1024).toFixed(2));
+    const recordCounts = {
+      products: data.products?.length || 0,
+      batches: data.batches?.length || 0,
+      vendors: data.vendors?.length || 0,
+      invoices: data.invoices?.length || 0,
+      stockAuditLogs: data.stockAuditLogs?.length || 0,
+      dpdpLogs: data.dpdpLogs?.length || 0,
+      backupSnapshots: data.backupSnapshots?.length || 0,
+      purchaseReceipts: data.purchaseReceipts?.length || 0,
+      salesReturns: data.salesReturns?.length || 0,
+    };
+    return {
+      version: 1,
+      pharmacyId,
+      timestamp: new Date().toISOString(),
+      sha256,
+      data,
+      metadata: {
+        recordCounts,
+        totalSizeKb,
+      },
+    };
+  }
+
+  createEncryptedBackup(pharmacyId = null, password = '', notes = '') {
+    if (!password || typeof password !== 'string' || !password.trim()) {
+      return { success: false, error: 'Password is required to generate an encrypted backup archive.' };
+    }
+    const backupPayload = this.createBackup(pharmacyId);
+    const plaintext = JSON.stringify(backupPayload);
+
+    const salt = crypto.randomBytes(16);
+    const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+
+    const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    const sha256Checksum = crypto.createHash('sha256').update(ciphertext).digest('hex');
+
+    const envelope = {
+      format: 'JEEVA_ENCRYPTED_BACKUP_V1',
+      version: 1,
+      pharmacyId,
+      timestamp: new Date().toISOString(),
+      algorithm: 'aes-256-gcm',
+      salt: salt.toString('hex'),
+      iv: iv.toString('hex'),
+      authTag: authTag.toString('hex'),
+      ciphertext: ciphertext.toString('hex'),
+      sha256Checksum,
+      metadata: backupPayload.metadata,
+      notes: notes || 'Encrypted database archive',
+    };
+
+    const snapId = `snap_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+    this.saveBackupSnapshot({
+      id: snapId,
+      pharmacyId,
+      timestamp: envelope.timestamp,
+      filename: `backup_${pharmacyId || 'all'}_${Date.now()}.jeeva.enc`,
+      triggerType: 'MANUAL_ENCRYPTED',
+      recordCounts: backupPayload.metadata.recordCounts,
+      totalSizeKb: Number((Buffer.byteLength(ciphertext) / 1024).toFixed(2)),
+      sha256Checksum,
+      isEncrypted: true,
+      notes: notes || 'Encrypted with AES-256-GCM',
+    });
+
+    return {
+      success: true,
+      envelope,
+      snapshotId: snapId,
+      sha256Checksum,
+    };
+  }
+
+  restoreEncryptedBackup(envelope, password = '', pharmacyId = null) {
+    if (!envelope || envelope.format !== 'JEEVA_ENCRYPTED_BACKUP_V1') {
+      return { success: false, error: 'Invalid backup envelope format. Expected JEEVA_ENCRYPTED_BACKUP_V1.' };
+    }
+    if (!password || typeof password !== 'string') {
+      return { success: false, error: 'Decryption passphrase is required to restore an encrypted backup.' };
+    }
+
+    const ciphertextBuf = Buffer.from(envelope.ciphertext, 'hex');
+    const computedSha = crypto.createHash('sha256').update(ciphertextBuf).digest('hex');
+    if (computedSha !== envelope.sha256Checksum) {
+      return { success: false, error: 'Tamper detected: SHA-256 checksum mismatch on backup ciphertext.' };
+    }
+
+    try {
+      const saltBuf = Buffer.from(envelope.salt, 'hex');
+      const key = crypto.pbkdf2Sync(password, saltBuf, 100000, 32, 'sha256');
+      const ivBuf = Buffer.from(envelope.iv, 'hex');
+      const authTagBuf = Buffer.from(envelope.authTag, 'hex');
+
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, ivBuf);
+      decipher.setAuthTag(authTagBuf);
+
+      const plaintext = Buffer.concat([decipher.update(ciphertextBuf), decipher.final()]).toString('utf8');
+      const parsed = JSON.parse(plaintext);
+      const backupData = parsed.data || parsed;
+
+      return this.restoreBackup(backupData, pharmacyId || envelope.pharmacyId);
+    } catch (err) {
+      return {
+        success: false,
+        error: `Decryption failed: ${err.message}. Authentication tag mismatch or incorrect password.`,
+      };
+    }
+  }
+
   restoreBackup(backupData, pharmacyId = null) {
+    if (!backupData || typeof backupData !== 'object') {
+      return { success: false, error: 'Invalid backup data provided.' };
+    }
+
+    // Phase 5: Automatic Pre-Restore Safety Snapshot
+    try {
+      const preRestoreData = this.getAllData(pharmacyId);
+      const preJson = JSON.stringify(preRestoreData);
+      const preSha = crypto.createHash('sha256').update(preJson).digest('hex');
+      const safetySnapId = `safety_snap_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+      this.saveBackupSnapshot({
+        id: safetySnapId,
+        pharmacyId,
+        timestamp: new Date().toISOString(),
+        filename: `pre_restore_safety_${pharmacyId || 'all'}_${Date.now()}.json`,
+        triggerType: 'PRE_RESTORE_SAFETY',
+        recordCounts: {
+          products: preRestoreData.products?.length || 0,
+          batches: preRestoreData.batches?.length || 0,
+          invoices: preRestoreData.invoices?.length || 0,
+          vendors: preRestoreData.vendors?.length || 0,
+          purchaseReceipts: preRestoreData.purchaseReceipts?.length || 0,
+          salesReturns: preRestoreData.salesReturns?.length || 0,
+          stockAuditLogs: preRestoreData.stockAuditLogs?.length || 0,
+          dpdpLogs: preRestoreData.dpdpLogs?.length || 0,
+        },
+        totalSizeKb: Number((Buffer.byteLength(preJson) / 1024).toFixed(2)),
+        sha256Checksum: preSha,
+        isEncrypted: false,
+        notes: 'Automatic safety snapshot captured prior to database restore',
+      });
+    } catch (snapErr) {
+      console.warn('[SQLite Backup] Pre-restore safety snapshot warning:', snapErr.message);
+    }
+
     this.db.exec('BEGIN TRANSACTION');
     try {
       if (Array.isArray(backupData.products)) {
@@ -3002,6 +3450,7 @@ class PharmacyDatabase {
           this.saveProduct({ ...p, pharmacyId: pharmacyId || p.pharmacyId });
         }
       }
+
       if (Array.isArray(backupData.batches)) {
         if (pharmacyId) {
           this.db.prepare('DELETE FROM batches WHERE productId IN (SELECT id FROM products WHERE pharmacyId = ?)').run(pharmacyId);
@@ -3012,6 +3461,7 @@ class PharmacyDatabase {
           this.saveBatch(b);
         }
       }
+
       if (Array.isArray(backupData.vendors)) {
         if (pharmacyId) {
           this.db.prepare('DELETE FROM vendors WHERE pharmacyId = ?').run(pharmacyId);
@@ -3022,12 +3472,16 @@ class PharmacyDatabase {
           this.saveVendor({ ...v, pharmacyId: pharmacyId || v.pharmacyId });
         }
       }
+
       if (Array.isArray(backupData.invoices)) {
         if (pharmacyId) {
           this.db.prepare('DELETE FROM invoices WHERE pharmacyId = ?').run(pharmacyId);
+          this.db.prepare('DELETE FROM invoice_items WHERE pharmacyId = ?').run(pharmacyId);
         } else {
           this.db.exec('DELETE FROM invoices');
+          this.db.exec('DELETE FROM invoice_items');
         }
+
         const invStmt = this.db.prepare(`
           INSERT INTO invoices (
             id, pharmacyId, invoiceNumber, invoiceDate, isInterState, prescriptionJson, itemsJson,
@@ -3035,7 +3489,16 @@ class PharmacyDatabase {
             grandTotal, paymentMethod, status, cashierName, taxSlabBreakdownsJson, createdAt
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
+        const invItemStmt = this.db.prepare(`
+          INSERT OR REPLACE INTO invoice_items (
+            id, invoiceId, pharmacyId, productId, productName, batchId, batchNumber,
+            unitType, quantity, stripSize, totalTabletsSold, unitPrice, costPrice,
+            mrp, gstRate, taxableAmount, cgstAmount, sgstAmount, igstAmount, totalAmount
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
         for (const inv of backupData.invoices) {
+          const items = Array.isArray(inv.items) ? inv.items : safeJsonParse(inv.itemsJson, []);
           invStmt.run(
             inv.id,
             pharmacyId || inv.pharmacyId || null,
@@ -3043,7 +3506,7 @@ class PharmacyDatabase {
             inv.invoiceDate,
             inv.isInterState ? 1 : 0,
             typeof inv.prescription === 'string' ? inv.prescription : JSON.stringify(inv.prescription || {}),
-            typeof inv.items === 'string' ? inv.items : JSON.stringify(inv.items || []),
+            typeof inv.items === 'string' ? inv.items : JSON.stringify(items),
             inv.subtotal || 0,
             inv.totalCgst || 0,
             inv.totalSgst || 0,
@@ -3057,8 +3520,151 @@ class PharmacyDatabase {
             typeof inv.taxSlabBreakdowns === 'string' ? inv.taxSlabBreakdowns : JSON.stringify(inv.taxSlabBreakdowns || []),
             inv.createdAt || inv.invoiceDate || new Date().toISOString()
           );
+
+          for (const it of items) {
+            invItemStmt.run(
+              it.id || `invitem_${inv.id}_${it.batchId || Math.random()}`,
+              inv.id,
+              pharmacyId || inv.pharmacyId || null,
+              it.productId || it.product?.id || '',
+              it.productName || it.product?.name || '',
+              it.batchId || it.batch?.id || '',
+              it.batchNumber || it.batch?.batchNumber || '',
+              it.unitType || 'STRIP',
+              Number(it.quantity) || 0,
+              Number(it.stripSize) || 10,
+              Number(it.totalTabletsSold) || (Number(it.quantity) * (Number(it.stripSize) || 10)),
+              Number(it.unitPrice) || 0,
+              Number(it.costPrice) || 0,
+              Number(it.mrp) || 0,
+              Number(it.gstRate) || 0,
+              Number(it.taxableAmount) || 0,
+              Number(it.cgstAmount) || 0,
+              Number(it.sgstAmount) || 0,
+              Number(it.igstAmount) || 0,
+              Number(it.totalAmount) || 0
+            );
+          }
         }
       }
+
+      if (Array.isArray(backupData.purchaseReceipts) || Array.isArray(backupData.purchaseInvoices)) {
+        const receipts = backupData.purchaseReceipts || backupData.purchaseInvoices;
+        if (pharmacyId) {
+          this.db.prepare('DELETE FROM purchase_receipts WHERE pharmacyId = ?').run(pharmacyId);
+          this.db.prepare('DELETE FROM purchase_receipt_items WHERE pharmacyId = ?').run(pharmacyId);
+        } else {
+          this.db.exec('DELETE FROM purchase_receipts');
+          this.db.exec('DELETE FROM purchase_receipt_items');
+        }
+        const prStmt = this.db.prepare(`
+          INSERT INTO purchase_receipts (
+            id, pharmacyId, grnNumber, grnDate, poNumber, vendorId, vendorName, vendorInvoiceNo,
+            invoiceDate, paymentDueDate, subtotal, discountTotal, taxableTotal, cgstTotal, sgstTotal,
+            igstTotal, roundOff, grandTotal, paymentStatus, paymentMode, status, notes, cancelReason,
+            itemsJson, createdAt, updatedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const itemStmt = this.db.prepare(`
+          INSERT INTO purchase_receipt_items (
+            id, receiptId, pharmacyId, productId, productName, batchNumber, expiryDate, manufacturingDate,
+            packing, quantityStrips, freeStrips, rejectedStrips, acceptedStrips, costPricePerStrip,
+            mrpPerStrip, discountPercent, gstRate, taxableAmount, cgstAmount, sgstAmount, igstAmount, lineTotal
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const pr of receipts) {
+          const items = Array.isArray(pr.items) ? pr.items : safeJsonParse(pr.itemsJson, []);
+          prStmt.run(
+            pr.id,
+            pharmacyId || pr.pharmacyId || null,
+            pr.grnNumber || `GRN-${Date.now()}`,
+            pr.grnDate || pr.invoiceDate || new Date().toISOString(),
+            pr.poNumber || null,
+            pr.vendorId || '',
+            pr.vendorName || '',
+            pr.vendorInvoiceNo || pr.invoiceNumber || '',
+            pr.invoiceDate || new Date().toISOString(),
+            pr.paymentDueDate || null,
+            pr.subtotal || 0,
+            pr.discountTotal || 0,
+            pr.taxableTotal || 0,
+            pr.cgstTotal || 0,
+            pr.sgstTotal || 0,
+            pr.igstTotal || 0,
+            pr.roundOff || 0,
+            pr.grandTotal || 0,
+            pr.paymentStatus || 'PAID',
+            pr.paymentMode || 'CREDIT_DUE',
+            pr.status || 'POSTED_TO_STOCK',
+            pr.notes || null,
+            pr.cancelReason || null,
+            JSON.stringify(items),
+            pr.createdAt || new Date().toISOString(),
+            pr.updatedAt || new Date().toISOString()
+          );
+          for (const it of items) {
+            itemStmt.run(
+              it.id || `pritem_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+              pr.id,
+              pharmacyId || pr.pharmacyId || null,
+              it.productId || '',
+              it.productName || '',
+              it.batchNumber || '',
+              it.expiryDate || '',
+              it.manufacturingDate || null,
+              it.packing || 10,
+              it.quantityStrips || 0,
+              it.freeStrips || 0,
+              it.rejectedStrips || 0,
+              it.acceptedStrips || 0,
+              it.costPricePerStrip || 0,
+              it.mrpPerStrip || 0,
+              it.discountPercent || 0,
+              it.gstRate || 0,
+              it.taxableAmount || 0,
+              it.cgstAmount || 0,
+              it.sgstAmount || 0,
+              it.igstAmount || 0,
+              it.lineTotal || 0
+            );
+          }
+        }
+      }
+
+      if (Array.isArray(backupData.salesReturns)) {
+        if (pharmacyId) {
+          this.db.prepare('DELETE FROM sales_returns WHERE pharmacyId = ?').run(pharmacyId);
+        } else {
+          this.db.exec('DELETE FROM sales_returns');
+        }
+        const srStmt = this.db.prepare(`
+          INSERT INTO sales_returns (
+            id, pharmacyId, returnNumber, invoiceId, invoiceNumber, customerName,
+            date, itemsJson, totalRefundAmount, refundMode, processedBy, reason,
+            isRestocked, createdAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const sr of backupData.salesReturns) {
+          const items = Array.isArray(sr.items) ? sr.items : safeJsonParse(sr.itemsJson, []);
+          srStmt.run(
+            sr.id,
+            pharmacyId || sr.pharmacyId || null,
+            sr.returnNumber,
+            sr.invoiceId,
+            sr.invoiceNumber,
+            sr.customerName || 'Customer',
+            sr.date || new Date().toISOString(),
+            JSON.stringify(items),
+            sr.totalRefundAmount || 0,
+            sr.refundMode || 'CASH',
+            sr.processedBy || 'Staff',
+            sr.reason || 'Customer return',
+            sr.isRestocked ? 1 : 0,
+            sr.createdAt || new Date().toISOString()
+          );
+        }
+      }
+
       if (Array.isArray(backupData.stockAuditLogs)) {
         if (pharmacyId) {
           this.db.prepare('DELETE FROM stock_audit_logs WHERE pharmacyId = ?').run(pharmacyId);
@@ -3103,6 +3709,7 @@ class PharmacyDatabase {
           );
         }
       }
+
       if (Array.isArray(backupData.dpdpLogs)) {
         if (pharmacyId) {
           this.db.prepare('DELETE FROM dpdp_logs WHERE pharmacyId = ?').run(pharmacyId);
@@ -3125,7 +3732,37 @@ class PharmacyDatabase {
           );
         }
       }
+
       this.db.exec('COMMIT');
+
+      // Record RESTORE_APPLIED snapshot
+      try {
+        const postData = this.getAllData(pharmacyId);
+        const postJson = JSON.stringify(postData);
+        const postSha = crypto.createHash('sha256').update(postJson).digest('hex');
+        this.saveBackupSnapshot({
+          id: `applied_snap_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+          pharmacyId,
+          timestamp: new Date().toISOString(),
+          filename: `restore_applied_${pharmacyId || 'all'}_${Date.now()}.json`,
+          triggerType: 'RESTORE_APPLIED',
+          recordCounts: {
+            products: postData.products?.length || 0,
+            batches: postData.batches?.length || 0,
+            invoices: postData.invoices?.length || 0,
+            vendors: postData.vendors?.length || 0,
+            purchaseReceipts: postData.purchaseReceipts?.length || 0,
+            salesReturns: postData.salesReturns?.length || 0,
+          },
+          totalSizeKb: Number((Buffer.byteLength(postJson) / 1024).toFixed(2)),
+          sha256Checksum: postSha,
+          isEncrypted: false,
+          notes: 'Backup archive successfully restored into local database ledger',
+        });
+      } catch (err) {
+        // Non-critical audit record
+      }
+
       return { success: true };
     } catch (e) {
       this.db.exec('ROLLBACK');

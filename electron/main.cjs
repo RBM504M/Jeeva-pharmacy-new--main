@@ -71,9 +71,15 @@ const PERMISSION_MATRIX = {
   'db:postSalesReturn': ['ADMIN', 'PHARMACIST'],
   'db:getSalesReturns': ['ADMIN', 'PHARMACIST', 'CASHIER'],
   'db:logDpdp': ['ADMIN', 'PHARMACIST', 'CASHIER', 'PHARMACY_ASSISTANT'],
+  'db:getDpdpLogs': ['ADMIN', 'PHARMACIST'],
+  'db:getScheduleRegister': ['ADMIN', 'PHARMACIST'],
+  'db:exportScheduleRegisterCsv': ['ADMIN', 'PHARMACIST'],
   'db:saveSetting': ['ADMIN', 'PHARMACIST'],
   'db:saveBackupSnapshot': ['ADMIN'],
   'db:restoreBackup': ['ADMIN'],
+  'db:createEncryptedBackup': ['ADMIN'],
+  'db:restoreEncryptedBackup': ['ADMIN'],
+  'db:getBackupSnapshots': ['ADMIN'],
 };
 
 const ALLOWED_SETTINGS_KEYS = new Set([
@@ -93,7 +99,7 @@ const ALLOWED_SETTINGS_KEYS = new Set([
 ]);
 
 function assertAuthenticated(session = activeSession) {
-  if (!session) {
+  if (!session || !session.user) {
     throw new Error('Unauthenticated: An active authenticated session is required.');
   }
   return session;
@@ -359,6 +365,32 @@ function registerIpcHandlers() {
     });
   });
 
+  handleDbIpc('db:getDpdpLogs', async (_, filter = {}) => {
+    assertPermission('db:getDpdpLogs');
+    return db.getDpdpLogs(
+      activeSession.pharmacy.id,
+      filter?.fromDate || null,
+      filter?.toDate || null,
+      filter?.limit || 500
+    );
+  });
+
+  handleDbIpc('db:getScheduleRegister', async (_, options = {}) => {
+    assertPermission('db:getScheduleRegister');
+    return db.getScheduleRegister({
+      ...options,
+      pharmacyId: activeSession.pharmacy.id,
+    });
+  });
+
+  handleDbIpc('db:exportScheduleRegisterCsv', async (_, options = {}) => {
+    assertPermission('db:exportScheduleRegisterCsv');
+    return db.exportScheduleRegisterCsv({
+      ...options,
+      pharmacyId: activeSession.pharmacy.id,
+    });
+  });
+
   handleDbIpc('db:saveSetting', async (_, { key, val }) => {
     assertPermission('db:saveSetting');
     if (key === 'remembered_session') {
@@ -415,6 +447,25 @@ function registerIpcHandlers() {
   handleDbIpc('db:restoreBackup', async (_, backupData) => {
     assertPermission('db:restoreBackup');
     return db.restoreBackup(backupData, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:createEncryptedBackup', async (_, payload = {}) => {
+    assertPermission('db:createEncryptedBackup');
+    const password = typeof payload === 'string' ? payload : (payload?.password || '');
+    const notes = typeof payload === 'object' ? payload?.notes : '';
+    return db.createEncryptedBackup(activeSession.pharmacy.id, password, notes);
+  });
+
+  handleDbIpc('db:restoreEncryptedBackup', async (_, payload = {}) => {
+    assertPermission('db:restoreEncryptedBackup');
+    const envelope = payload?.envelope || payload;
+    const password = payload?.password || '';
+    return db.restoreEncryptedBackup(envelope, password, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:getBackupSnapshots', async () => {
+    assertPermission('db:getBackupSnapshots');
+    return db.getBackupSnapshots(activeSession.pharmacy.id);
   });
 
   ipcMain.handle('print:receipt', async (_, options = {}) => {

@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPurchaseReceipts: () => ipcRenderer.invoke('db:getPurchaseReceipts'),
   postSalesReturn: (payload) => ipcRenderer.invoke('db:postSalesReturn', payload),
   getSalesReturns: () => ipcRenderer.invoke('db:getSalesReturns'),
+  getScheduleRegister: (options) => ipcRenderer.invoke('db:getScheduleRegister', options),
+  exportScheduleRegisterCsv: (options) => ipcRenderer.invoke('db:exportScheduleRegisterCsv', options),
+  getDpdpLogs: (filter) => ipcRenderer.invoke('db:getDpdpLogs', filter),
+  createEncryptedBackup: (payload) => ipcRenderer.invoke('db:createEncryptedBackup', payload),
+  restoreEncryptedBackup: (payload) => ipcRenderer.invoke('db:restoreEncryptedBackup', payload),
+  getBackupSnapshots: () => ipcRenderer.invoke('db:getBackupSnapshots'),
 
   // Printing & Hardware
   printReceipt: (options) => ipcRenderer.invoke('print:receipt', options),
