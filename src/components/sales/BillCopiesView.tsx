@@ -181,17 +181,19 @@ export const BillCopiesView: React.FC<BillCopiesViewProps> = ({
   // Real context invoice handler (fallback)
   const realSelectedInvoice = invoices.find((i) => i.id === selectedInvoiceId) || invoices[0];
 
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     if (!realSelectedInvoice) {
       triggerNotice(`✓ Bill #${activeBill.billNumber} cancelled.`);
       setShowCancelModal(false);
       return;
     }
-    const res = cancelInvoice(realSelectedInvoice.id, cancelReason || 'Customer requested cancellation');
+    const res = await cancelInvoice(realSelectedInvoice.id, cancelReason || 'Customer requested cancellation');
     if (res.success) {
       triggerNotice(`✓ Bill #${realSelectedInvoice.invoiceNumber} cancelled.`);
       setShowCancelModal(false);
       setCancelReason('');
+    } else {
+      triggerNotice(`Failed to cancel bill: ${res.error || 'Unknown error'}`);
     }
   };
 

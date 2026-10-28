@@ -627,7 +627,7 @@ export const PosBillingView: React.FC = () => {
     };
   }, [cartItems]);
 
-  const handleFinalCheckout = (autoPrint: boolean = false) => {
+  const handleFinalCheckout = async (autoPrint: boolean = false) => {
     if (cartItems.length === 0) {
       setCheckoutError('Please add at least one medicine to the bill.');
       return;
@@ -684,34 +684,38 @@ export const PosBillingView: React.FC = () => {
       createdAt: new Date().toISOString(),
     };
 
-    const res = createInvoice(newInvoice);
-    if (!res.success) {
-      setCheckoutError(res.error || 'Failed to complete checkout');
-      return;
+    try {
+      const res = await createInvoice(newInvoice);
+      if (!res.success) {
+        setCheckoutError(res.error || 'Failed to complete checkout');
+        return;
+      }
+
+      setCompletedInvoice(res.invoice || newInvoice);
+      setShowReviewModal(false);
+      setShowPrintModal(true);
+
+      if (autoPrint || printerSettings.isPrintingEnabled) {
+        setTimeout(() => {
+          window.print();
+        }, 500);
+      }
+
+      setCartItems([]);
+      setPrescription({
+        patientName: 'Walk-in Customer',
+        patientContact: '',
+        patientAge: undefined,
+        patientGender: 'MALE',
+        doctorName: '',
+        doctorRegNumber: '',
+        notes: '',
+        dpdpConsentAccepted: false,
+      });
+      setCheckoutError(null);
+    } catch (err: any) {
+      setCheckoutError(err?.message || 'Failed to complete checkout');
     }
-
-    setCompletedInvoice(newInvoice);
-    setShowReviewModal(false);
-    setShowPrintModal(true);
-
-    if (autoPrint || printerSettings.isPrintingEnabled) {
-      setTimeout(() => {
-        window.print();
-      }, 500);
-    }
-
-    setCartItems([]);
-    setPrescription({
-      patientName: 'Walk-in Customer',
-      patientContact: '',
-      patientAge: undefined,
-      patientGender: 'MALE',
-      doctorName: '',
-      doctorRegNumber: '',
-      notes: '',
-      dpdpConsentAccepted: false,
-    });
-    setCheckoutError(null);
   };
 
   return (

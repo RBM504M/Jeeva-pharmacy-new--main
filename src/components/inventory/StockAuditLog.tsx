@@ -236,7 +236,7 @@ export const StockAuditLog: React.FC<StockAuditLogProps> = ({
   }, [filteredAuditLogs, currentPage, entriesPerPage]);
 
   // Submission handler for Manual Stock Adjustment
-  const handleSubmitAdjustment = (e: React.FormEvent) => {
+  const handleSubmitAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdjFormError(null);
 
@@ -268,7 +268,7 @@ export const StockAuditLog: React.FC<StockAuditLogProps> = ({
       return;
     }
 
-    const result = recordManualAdjustment({
+    const result = await recordManualAdjustment({
       productId: prod.id,
       batchId: b.id,
       adjustmentType: adjType,
@@ -289,7 +289,7 @@ export const StockAuditLog: React.FC<StockAuditLogProps> = ({
   };
 
   // Submission handler for Vendor Return
-  const handleSubmitReturn = (e: React.FormEvent) => {
+  const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     setRetFormError(null);
 
@@ -319,7 +319,7 @@ export const StockAuditLog: React.FC<StockAuditLogProps> = ({
       return;
     }
 
-    const result = recordVendorReturn({
+    const result = await recordVendorReturn({
       productId: prod.id,
       batchId: b.id,
       vendorId: retVendorId,

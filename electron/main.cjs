@@ -186,23 +186,34 @@ function registerIpcHandlers() {
     return db.updatePharmacyProfile(activeSession.pharmacy.id, payload);
   });
 
+  const handleDbIpc = (channel, handler) => {
+    ipcMain.handle(channel, async (event, ...args) => {
+      try {
+        return await handler(event, ...args);
+      } catch (err) {
+        console.error(`Error in IPC ${channel}:`, err);
+        return { success: false, error: err?.message || 'Database operation failed' };
+      }
+    });
+  };
+
   // Protected Database Operations
-  ipcMain.handle('db:getAllData', async () => {
+  handleDbIpc('db:getAllData', async () => {
     assertAuthenticated();
     return db.getAllData(activeSession.pharmacy.id);
   });
 
-  ipcMain.handle('db:saveProduct', async (_, product) => {
+  handleDbIpc('db:saveProduct', async (_, product) => {
     assertAuthenticated();
     return db.saveProduct({ ...product, pharmacyId: activeSession.pharmacy.id });
   });
 
-  ipcMain.handle('db:saveBatch', async (_, batch) => {
+  handleDbIpc('db:saveBatch', async (_, batch) => {
     assertAuthenticated();
     return db.saveBatch(batch);
   });
 
-  ipcMain.handle('db:createInvoice', async (_, payload) => {
+  handleDbIpc('db:createInvoice', async (_, payload) => {
     assertAuthenticated();
     const invoice = payload?.invoice || payload;
     const auditEntries = payload?.auditEntries || [];
@@ -221,7 +232,7 @@ function registerIpcHandlers() {
     );
   });
 
-  ipcMain.handle('db:cancelInvoice', async (_, { invoiceId, reason, rollbackEntries }) => {
+  handleDbIpc('db:cancelInvoice', async (_, { invoiceId, reason, rollbackEntries }) => {
     assertAuthenticated();
     return db.cancelInvoice(
       invoiceId,
@@ -235,12 +246,12 @@ function registerIpcHandlers() {
     );
   });
 
-  ipcMain.handle('db:updateInvoicePaymentMethod', async (_, { invoiceId, newPaymentMethod }) => {
+  handleDbIpc('db:updateInvoicePaymentMethod', async (_, { invoiceId, newPaymentMethod }) => {
     assertAuthenticated();
     return db.updateInvoicePaymentMethod(invoiceId, newPaymentMethod);
   });
 
-  ipcMain.handle('db:recordStockAdjustment', async (_, adjustment) => {
+  handleDbIpc('db:recordStockAdjustment', async (_, adjustment) => {
     assertAuthenticated();
     return db.recordStockAdjustment({
       ...adjustment,
@@ -250,12 +261,12 @@ function registerIpcHandlers() {
     });
   });
 
-  ipcMain.handle('db:saveVendor', async (_, vendor) => {
+  handleDbIpc('db:saveVendor', async (_, vendor) => {
     assertAuthenticated();
     return db.saveVendor({ ...vendor, pharmacyId: activeSession.pharmacy.id });
   });
 
-  ipcMain.handle('db:logDpdp', async (_, entry) => {
+  handleDbIpc('db:logDpdp', async (_, entry) => {
     assertAuthenticated();
     return db.logDpdp({
       ...entry,
@@ -264,17 +275,17 @@ function registerIpcHandlers() {
     });
   });
 
-  ipcMain.handle('db:saveSetting', async (_, { key, val }) => {
+  handleDbIpc('db:saveSetting', async (_, { key, val }) => {
     assertAuthenticated();
     return db.saveSetting(key, val);
   });
 
-  ipcMain.handle('db:saveBackupSnapshot', async (_, snapshot) => {
+  handleDbIpc('db:saveBackupSnapshot', async (_, snapshot) => {
     assertAdmin();
     return db.saveBackupSnapshot({ ...snapshot, pharmacyId: activeSession.pharmacy.id });
   });
 
-  ipcMain.handle('db:restoreBackup', async (_, backupData) => {
+  handleDbIpc('db:restoreBackup', async (_, backupData) => {
     assertAdmin();
     return db.restoreBackup(backupData, activeSession.pharmacy.id);
   });

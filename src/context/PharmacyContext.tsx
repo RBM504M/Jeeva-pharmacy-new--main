@@ -134,13 +134,13 @@ interface PharmacyContextType {
   switchUserRole: (role: UserRole) => void;
   addProduct: (product: Product) => void;
   updateProduct: (product: Product) => void;
-  addVendor: (vendor: Vendor) => void;
-  updateVendor: (vendor: Vendor) => void;
+  addVendor: (vendor: Vendor) => Promise<{ success: boolean; error?: string }>;
+  updateVendor: (vendor: Vendor) => Promise<{ success: boolean; error?: string }>;
   addBatch: (batch: Batch) => void;
-  inwardStockBatch: (batchData: Omit<Batch, 'id'>, vendorInvoiceNo?: string) => void;
-  createInvoice: (invoice: Invoice) => { success: boolean; error?: string };
-  cancelInvoice: (invoiceId: string, reason: string) => { success: boolean; error?: string };
-  updateInvoicePaymentMethod: (invoiceId: string, paymentMethod: PaymentMethod) => { success: boolean; error?: string };
+  inwardStockBatch: (batchData: Omit<Batch, 'id'>, vendorInvoiceNo?: string) => Promise<{ success: boolean; error?: string; batch?: Batch }>;
+  createInvoice: (invoice: Invoice) => Promise<{ success: boolean; error?: string; invoice?: Invoice }>;
+  cancelInvoice: (invoiceId: string, reason: string) => Promise<{ success: boolean; error?: string }>;
+  updateInvoicePaymentMethod: (invoiceId: string, paymentMethod: PaymentMethod) => Promise<{ success: boolean; error?: string }>;
   processSalesReturn: (params: {
     invoiceId: string;
     returnedItems: Array<{
@@ -165,7 +165,7 @@ interface PharmacyContextType {
     quantityChangeTablets: number;
     reason: string;
     referenceNumber?: string;
-  }) => { success: boolean; error?: string };
+  }) => Promise<{ success: boolean; error?: string }>;
   recordVendorReturn: (params: {
     productId: string;
     batchId: string;
@@ -173,7 +173,7 @@ interface PharmacyContextType {
     returnTablets: number;
     reason: string;
     debitNoteNumber?: string;
-  }) => { success: boolean; error?: string };
+  }) => Promise<{ success: boolean; error?: string }>;
   analytics: AnalyticsSummary;
   findProductByBarcode: (barcode: string) => { product?: Product; activeBatch?: Batch } | null;
   clearAllData: () => void;
@@ -1541,13 +1541,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  const inwardStockBatch = (batchData: Omit<Batch, 'id'>, vendorInvoiceNo?: string) => {
+  const inwardStockBatch = async (
+    batchData: Omit<Batch, 'id'>,
+    vendorInvoiceNo?: string
+  ): Promise<{ success: boolean; error?: string; batch?: Batch }> => {
     const newBatchId = `batch_${Date.now()}`;
     const newBatch: Batch = {
       ...batchData,
       id: newBatchId,
     };
-    setBatches((prev) => [newBatch, ...prev]);
 
     const prod = products.find((p) => p.id === newBatch.productId);
     const vendor = vendors.find((v) => v.id === newBatch.vendorId);
@@ -1599,25 +1601,39 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       rackLocation: prod?.rackLocation,
     };
 
-    setStockAuditLogs((prev) => [auditEntry, ...prev]);
-
     if (window.electronAPI) {
-      window.electronAPI.saveBatch(newBatch);
-      window.electronAPI.recordStockAdjustment(auditEntry);
+      try {
+        const bRes = await window.electronAPI.saveBatch(newBatch);
+        if (!bRes || bRes.success === false) {
+          return { success: false, error: bRes?.error || 'Failed to save batch in database' };
+        }
+        const aRes = await window.electronAPI.recordStockAdjustment(auditEntry);
+        if (!aRes || aRes.success === false) {
+          return { success: false, error: aRes?.error || 'Failed to record stock adjustment in database' };
+        }
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error inwarding stock batch' };
+      }
     }
 
+    setBatches((prev) => [newBatch, ...prev]);
+    setStockAuditLogs((prev) => [auditEntry, ...prev]);
+
     // Record DPDP / Inventory ledger log
-    setDpdpLogs((prev) => [
-      {
-        id: `log_${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        patientPhoneMasked: 'N/A (STOCK INWARD)',
-        action: 'INWARD_STOCK_RECEIVED',
-        operatorName: currentUser.name,
-        purpose: `Received batch ${newBatch.batchNumber} (${newBatch.totalTablets} units) ${vendorInvoiceNo ? `via Inv #${vendorInvoiceNo}` : ''}`,
-      },
-      ...prev,
-    ]);
+    const dpdpEntry: DpdpLogEntry = {
+      id: `log_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      patientPhoneMasked: 'N/A (STOCK INWARD)',
+      action: 'INWARD_STOCK_RECEIVED',
+      operatorName: currentUser.name,
+      purpose: `Received batch ${newBatch.batchNumber} (${newBatch.totalTablets} units) ${vendorInvoiceNo ? `via Inv #${vendorInvoiceNo}` : ''}`,
+    };
+    setDpdpLogs((prev) => [dpdpEntry, ...prev]);
+    if (window.electronAPI) {
+      window.electronAPI.logDpdp(dpdpEntry).catch((err) => console.warn('Failed to log DPDP in SQLite:', err));
+    }
+
+    return { success: true, batch: newBatch };
   };
 
   // Find product and best batch (non-expired, nearest expiry first) by scanned barcode
@@ -1643,7 +1659,9 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // Create Invoice and decrement stock at atomic tablet level with full audit trail
-  const createInvoice = (newInvoice: Invoice): { success: boolean; error?: string } => {
+  const createInvoice = async (
+    newInvoice: Invoice
+  ): Promise<{ success: boolean; error?: string; invoice?: Invoice }> => {
     // 0. Collision check
     if (!newInvoice.id || !newInvoice.invoiceNumber) {
       return { success: false, error: 'Invoice must contain a valid ID and Invoice Number.' };
@@ -1748,7 +1766,36 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
     });
 
-    // 4. Decrement atomic tablets atomically using aggregated counts
+    const maskedPhone = maskPhoneDPDP(newInvoice.prescription.patientContact);
+    const dpdpEntry: DpdpLogEntry = {
+      id: `dpdp_${Date.now()}`,
+      timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      patientPhoneMasked: maskedPhone,
+      action: 'DISPENSED_PRESCRIPTION',
+      operatorName: `${currentUser.name} (${currentUser.role})`,
+      purpose: `Billed Invoice #${newInvoice.invoiceNumber} for ${newInvoice.items.length} items. Consent: ${newInvoice.prescription.dpdpConsentAccepted ? 'Consented' : 'Standard'}.`,
+    };
+
+    // If running in Electron, await SQLite commit BEFORE updating local preview state
+    if (window.electronAPI) {
+      try {
+        const res = await window.electronAPI.createInvoice(newInvoice, newAuditEntries);
+        if (!res || res.success === false) {
+          return {
+            success: false,
+            error: res?.error || 'Database write failed. Invoice was not committed.',
+          };
+        }
+        window.electronAPI.logDpdp(dpdpEntry).catch((err) => console.warn('Failed to log DPDP in SQLite:', err));
+      } catch (err: any) {
+        return {
+          success: false,
+          error: err?.message || 'IPC error during invoice persistence.',
+        };
+      }
+    }
+
+    // 4. Decrement atomic tablets atomically using aggregated counts in local preview cache
     setBatches((prevBatches) =>
       prevBatches.map((batch) => {
         const req = requestedPerBatch[batch.id];
@@ -1771,46 +1818,22 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setInvoices((prev) => [newInvoice, ...prev]);
 
     // 7. Log DPDP Act compliance entry
-    const maskedPhone = maskPhoneDPDP(newInvoice.prescription.patientContact);
-    const dpdpEntry: DpdpLogEntry = {
-      id: `dpdp_${Date.now()}`,
-      timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-      patientPhoneMasked: maskedPhone,
-      action: 'DISPENSED_PRESCRIPTION',
-      operatorName: `${currentUser.name} (${currentUser.role})`,
-      purpose: `Billed Invoice #${newInvoice.invoiceNumber} for ${newInvoice.items.length} items. Consent: ${newInvoice.prescription.dpdpConsentAccepted ? 'Consented' : 'Standard'}.`,
-    };
     setDpdpLogs((prev) => [dpdpEntry, ...prev]);
 
-    if (window.electronAPI) {
-      window.electronAPI.createInvoice(newInvoice, newAuditEntries);
-      window.electronAPI.logDpdp(dpdpEntry);
-    }
-
-    return { success: true };
+    return { success: true, invoice: newInvoice };
   };
 
   // Cancel Invoice and roll back stock
-  const cancelInvoice = (invoiceId: string, reason: string): { success: boolean; error?: string } => {
+  const cancelInvoice = async (
+    invoiceId: string,
+    reason: string
+  ): Promise<{ success: boolean; error?: string }> => {
     const inv = invoices.find((i) => i.id === invoiceId);
     if (!inv) return { success: false, error: 'Invoice not found' };
     if (inv.status === 'CANCELLED') return { success: false, error: 'Invoice is already cancelled' };
+    if (!reason || !reason.trim()) return { success: false, error: 'Cancellation reason is required' };
 
-    // 1. Rollback batch stock
-    setBatches((prevBatches) =>
-      prevBatches.map((batch) => {
-        const itemSold = inv.items.find((item) => item.batch.id === batch.id);
-        if (itemSold) {
-          return {
-            ...batch,
-            totalTablets: batch.totalTablets + itemSold.totalTabletsSold,
-          };
-        }
-        return batch;
-      })
-    );
-
-    // 2. Add stock audit log for rollback
+    // 1. Prepare rollback audit entries
     const rollbackEntries: StockAuditLogEntry[] = inv.items.map((item) => {
       const targetBatch = batches.find((b) => b.id === item.batch.id);
       const prevStock = targetBatch ? targetBatch.totalTablets : 0;
@@ -1847,14 +1870,6 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
     });
 
-    setStockAuditLogs((prev) => [...rollbackEntries, ...prev]);
-
-    // 3. Mark invoice as cancelled
-    setInvoices((prev) =>
-      prev.map((i) => (i.id === invoiceId ? { ...i, status: 'CANCELLED' } : i))
-    );
-
-    // 4. DPDP audit
     const dpdpEntry: DpdpLogEntry = {
       id: `dpdp_${Date.now()}`,
       timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
@@ -1863,31 +1878,57 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       operatorName: `${currentUser.name} (${currentUser.role})`,
       purpose: `Cancelled Invoice #${inv.invoiceNumber}. Reason: ${reason}`,
     };
-    setDpdpLogs((prev) => [dpdpEntry, ...prev]);
 
+    // If running in Electron, persist to SQLite FIRST
     if (window.electronAPI) {
-      window.electronAPI.cancelInvoice({
-        invoiceId,
-        reason,
-        rollbackEntries,
-      });
-      window.electronAPI.logDpdp(dpdpEntry);
+      try {
+        const res = await window.electronAPI.cancelInvoice({
+          invoiceId,
+          reason,
+          rollbackEntries,
+        });
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Database cancellation failed.' };
+        }
+        window.electronAPI.logDpdp(dpdpEntry).catch((err) => console.warn('Failed to log DPDP in SQLite:', err));
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error during invoice cancellation.' };
+      }
     }
+
+    // Rollback batch stock in local preview cache
+    setBatches((prevBatches) =>
+      prevBatches.map((batch) => {
+        const itemSold = inv.items.find((item) => item.batch.id === batch.id);
+        if (itemSold) {
+          return {
+            ...batch,
+            totalTablets: batch.totalTablets + itemSold.totalTabletsSold,
+          };
+        }
+        return batch;
+      })
+    );
+
+    setStockAuditLogs((prev) => [...rollbackEntries, ...prev]);
+
+    // Mark invoice as cancelled
+    setInvoices((prev) =>
+      prev.map((i) => (i.id === invoiceId ? { ...i, status: 'CANCELLED' } : i))
+    );
+
+    setDpdpLogs((prev) => [dpdpEntry, ...prev]);
 
     return { success: true };
   };
 
   // Modify invoice payment mode
-  const updateInvoicePaymentMethod = (
+  const updateInvoicePaymentMethod = async (
     invoiceId: string,
     newPaymentMethod: PaymentMethod
-  ): { success: boolean; error?: string } => {
+  ): Promise<{ success: boolean; error?: string }> => {
     const inv = invoices.find((i) => i.id === invoiceId);
     if (!inv) return { success: false, error: 'Invoice not found' };
-
-    setInvoices((prev) =>
-      prev.map((i) => (i.id === invoiceId ? { ...i, paymentMethod: newPaymentMethod } : i))
-    );
 
     const dpdpEntry: DpdpLogEntry = {
       id: `dpdp_${Date.now()}`,
@@ -1897,15 +1938,27 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       operatorName: `${currentUser.name} (${currentUser.role})`,
       purpose: `Changed payment method of Invoice #${inv.invoiceNumber} from ${inv.paymentMethod} to ${newPaymentMethod}`,
     };
-    setDpdpLogs((prev) => [dpdpEntry, ...prev]);
 
     if (window.electronAPI) {
-      window.electronAPI.updateInvoicePaymentMethod({
-        invoiceId,
-        newPaymentMethod,
-      });
-      window.electronAPI.logDpdp(dpdpEntry);
+      try {
+        const res = await window.electronAPI.updateInvoicePaymentMethod({
+          invoiceId,
+          newPaymentMethod,
+        });
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Failed to update payment method in database.' };
+        }
+        window.electronAPI.logDpdp(dpdpEntry).catch((err) => console.warn('Failed to log DPDP in SQLite:', err));
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error during payment method update.' };
+      }
     }
+
+    setInvoices((prev) =>
+      prev.map((i) => (i.id === invoiceId ? { ...i, paymentMethod: newPaymentMethod } : i))
+    );
+
+    setDpdpLogs((prev) => [dpdpEntry, ...prev]);
 
     return { success: true };
   };
@@ -2271,7 +2324,18 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
   };
 
-  const addVendor = (vendor: Vendor) => {
+  const addVendor = async (vendor: Vendor): Promise<{ success: boolean; error?: string }> => {
+    if (window.electronAPI) {
+      try {
+        const res = await window.electronAPI.saveVendor(vendor);
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Failed to save vendor in database.' };
+        }
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error saving vendor.' };
+      }
+    }
+
     setVendors((prev) => {
       const updated = [vendor, ...prev];
       try {
@@ -2281,12 +2345,22 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return updated;
     });
-    if (window.electronAPI) {
-      window.electronAPI.saveVendor(vendor);
-    }
+
+    return { success: true };
   };
 
-  const updateVendor = (vendor: Vendor) => {
+  const updateVendor = async (vendor: Vendor): Promise<{ success: boolean; error?: string }> => {
+    if (window.electronAPI) {
+      try {
+        const res = await window.electronAPI.saveVendor(vendor);
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Failed to update vendor in database.' };
+        }
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error updating vendor.' };
+      }
+    }
+
     setVendors((prev) => {
       const updated = prev.map((v) => (v.id === vendor.id ? vendor : v));
       try {
@@ -2296,20 +2370,19 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return updated;
     });
-    if (window.electronAPI) {
-      window.electronAPI.saveVendor(vendor);
-    }
+
+    return { success: true };
   };
 
   // Record manual stock adjustment / physical count reconciliation / breakage write-off
-  const recordManualAdjustment = (params: {
+  const recordManualAdjustment = async (params: {
     productId: string;
     batchId: string;
     adjustmentType: 'MANUAL_ADJUSTMENT' | 'DAMAGE_WRITEOFF' | 'EXPIRY_DISPOSAL';
     quantityChangeTablets: number;
     reason: string;
     referenceNumber?: string;
-  }): { success: boolean; error?: string } => {
+  }): Promise<{ success: boolean; error?: string }> => {
     const prod = products.find((p) => p.id === params.productId);
     const targetBatch = batches.find((b) => b.id === params.batchId);
     if (!prod || !targetBatch) {
@@ -2324,11 +2397,6 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         error: `Adjustment would cause negative inventory balance (${newStock} tablets). Available stock is ${prevStock} tablets.`,
       };
     }
-
-    // Update batch stock
-    setBatches((prev) =>
-      prev.map((b) => (b.id === params.batchId ? { ...b, totalTablets: newStock } : b))
-    );
 
     const stripSize = prod.stripSize || 10;
     const prevFormatted = formatDualUnitStock(prevStock, stripSize).displayString;
@@ -2379,6 +2447,31 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       rackLocation: prod.rackLocation,
     };
 
+    const updatedBatch: Batch = {
+      ...targetBatch,
+      totalTablets: newStock,
+    };
+
+    if (window.electronAPI) {
+      try {
+        const batchRes = await window.electronAPI.saveBatch(updatedBatch);
+        if (!batchRes || batchRes.success === false) {
+          return { success: false, error: batchRes?.error || 'Failed to save batch in database.' };
+        }
+        const adjRes = await window.electronAPI.recordStockAdjustment(auditEntry);
+        if (!adjRes || adjRes.success === false) {
+          return { success: false, error: adjRes?.error || 'Failed to record stock adjustment in database.' };
+        }
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error recording stock adjustment.' };
+      }
+    }
+
+    // Update batch stock
+    setBatches((prev) =>
+      prev.map((b) => (b.id === params.batchId ? updatedBatch : b))
+    );
+
     setStockAuditLogs((prev) => [auditEntry, ...prev]);
 
     setDpdpLogs((prev) => [
@@ -2393,28 +2486,18 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ...prev,
     ]);
 
-    const updatedBatch: Batch = {
-      ...targetBatch,
-      totalTablets: newStock,
-    };
-
-    if (window.electronAPI) {
-      window.electronAPI.saveBatch(updatedBatch);
-      window.electronAPI.recordStockAdjustment(auditEntry);
-    }
-
     return { success: true };
   };
 
   // Record vendor return with debit note generation and batch deduction
-  const recordVendorReturn = (params: {
+  const recordVendorReturn = async (params: {
     productId: string;
     batchId: string;
     vendorId: string;
     returnTablets: number;
     reason: string;
     debitNoteNumber?: string;
-  }): { success: boolean; error?: string } => {
+  }): Promise<{ success: boolean; error?: string }> => {
     const prod = products.find((p) => p.id === params.productId);
     const targetBatch = batches.find((b) => b.id === params.batchId);
     const targetVendor = vendors.find((v) => v.id === params.vendorId);
@@ -2433,12 +2516,6 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const prevStock = targetBatch.totalTablets;
     const newStock = prevStock - params.returnTablets;
-
-    // Deduct stock from batch
-    setBatches((prev) =>
-      prev.map((b) => (b.id === params.batchId ? { ...b, totalTablets: newStock } : b))
-    );
-
     const stripSize = prod.stripSize || 10;
     const prevFormatted = formatDualUnitStock(prevStock, stripSize).displayString;
     const newFormatted = formatDualUnitStock(newStock, stripSize).displayString;
@@ -2488,22 +2565,14 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       rackLocation: prod.rackLocation,
     };
 
-    setStockAuditLogs((prev) => [auditEntry, ...prev]);
-
-    // Adjust vendor balance due (credit debit note)
+    let updatedVendor: Vendor | undefined;
     if (targetVendor) {
       const costPerTab = targetBatch.costPricePerStrip / stripSize;
       const creditAmount = Number((costPerTab * params.returnTablets).toFixed(2));
-      const updatedVendor = {
+      updatedVendor = {
         ...targetVendor,
         balanceDue: Math.max(0, targetVendor.balanceDue - creditAmount),
       };
-      setVendors((prev) =>
-        prev.map((v) => (v.id === targetVendor.id ? updatedVendor : v))
-      );
-      if (window.electronAPI) {
-        window.electronAPI.saveVendor(updatedVendor);
-      }
     }
 
     const updatedBatch: Batch = {
@@ -2512,8 +2581,38 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     if (window.electronAPI) {
-      window.electronAPI.saveBatch(updatedBatch);
-      window.electronAPI.recordStockAdjustment(auditEntry);
+      try {
+        if (updatedVendor) {
+          const vRes = await window.electronAPI.saveVendor(updatedVendor);
+          if (!vRes || vRes.success === false) {
+            return { success: false, error: vRes?.error || 'Failed to update vendor in database.' };
+          }
+        }
+        const bRes = await window.electronAPI.saveBatch(updatedBatch);
+        if (!bRes || bRes.success === false) {
+          return { success: false, error: bRes?.error || 'Failed to save batch in database.' };
+        }
+        const aRes = await window.electronAPI.recordStockAdjustment(auditEntry);
+        if (!aRes || aRes.success === false) {
+          return { success: false, error: aRes?.error || 'Failed to record stock adjustment in database.' };
+        }
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error during vendor return.' };
+      }
+    }
+
+    // Deduct stock from batch
+    setBatches((prev) =>
+      prev.map((b) => (b.id === params.batchId ? updatedBatch : b))
+    );
+
+    setStockAuditLogs((prev) => [auditEntry, ...prev]);
+
+    // Adjust vendor balance due (credit debit note)
+    if (updatedVendor) {
+      setVendors((prev) =>
+        prev.map((v) => (v.id === updatedVendor!.id ? updatedVendor! : v))
+      );
     }
 
     setDpdpLogs((prev) => [

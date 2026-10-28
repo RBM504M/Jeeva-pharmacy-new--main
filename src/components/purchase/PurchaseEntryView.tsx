@@ -254,7 +254,7 @@ export const PurchaseEntryView: React.FC<PurchaseEntryViewProps> = ({
   const returnBatch = batches.find((b) => b.id === returnBatchId) || batches[0];
   const returnProduct = products.find((p) => p.id === returnBatch?.productId);
 
-  const handleProcessPurchaseReturn = (e: React.FormEvent) => {
+  const handleProcessPurchaseReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!returnBatch || !returnProduct) return;
 
@@ -264,7 +264,7 @@ export const PurchaseEntryView: React.FC<PurchaseEntryViewProps> = ({
       return;
     }
 
-    const res = recordVendorReturn({
+    const res = await recordVendorReturn({
       productId: returnProduct.id,
       batchId: returnBatch.id,
       vendorId: returnVendorId,
