@@ -30,6 +30,10 @@ export interface ElectronAPI {
   }>;
   saveProduct: (product: Product) => Promise<{ success: boolean; error?: string }>;
   saveBatch: (batch: Batch) => Promise<{ success: boolean; error?: string }>;
+  createBatch: (batch: Batch) => Promise<{ success: boolean; error?: string; batchId?: string }>;
+  updateBatchMetadata: (batch: Partial<Batch> & { id: string }) => Promise<{ success: boolean; error?: string }>;
+  receiveStock: (payload: { batchId: string; quantityChangeTablets: number; reason?: string; referenceNumber?: string; rackLocation?: string }) => Promise<{ success: boolean; error?: string; newStockTablets?: number }>;
+  adjustStock: (payload: { batchId: string; adjustmentType?: string; quantityChangeTablets?: number; newStockTablets?: number; reason?: string; referenceNumber?: string; rackLocation?: string }) => Promise<{ success: boolean; error?: string; newStockTablets?: number; previousStockTablets?: number; change?: number }>;
   createInvoice: (invoice: Invoice, auditEntries?: StockAuditLogEntry[]) => Promise<{ success: boolean; error?: string }>;
   cancelInvoice: (data: { invoiceId: string; reason: string; rollbackEntries: StockAuditLogEntry[] }) => Promise<{ success: boolean; error?: string }>;
   updateInvoicePaymentMethod: (data: { invoiceId: string; newPaymentMethod: string }) => Promise<{ success: boolean; error?: string }>;

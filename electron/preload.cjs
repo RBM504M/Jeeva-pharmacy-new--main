@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAllData: () => ipcRenderer.invoke('db:getAllData'),
   saveProduct: (product) => ipcRenderer.invoke('db:saveProduct', product),
   saveBatch: (batch) => ipcRenderer.invoke('db:saveBatch', batch),
+  createBatch: (batch) => ipcRenderer.invoke('db:createBatch', batch),
+  updateBatchMetadata: (batch) => ipcRenderer.invoke('db:updateBatchMetadata', batch),
+  receiveStock: (payload) => ipcRenderer.invoke('db:receiveStock', payload),
+  adjustStock: (payload) => ipcRenderer.invoke('db:adjustStock', payload),
   createInvoice: (invoice, auditEntries = []) => {
     if (invoice && invoice.invoice) {
       return ipcRenderer.invoke('db:createInvoice', invoice);

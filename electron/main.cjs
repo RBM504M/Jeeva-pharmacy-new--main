@@ -1,4 +1,12 @@
-const { app, BrowserWindow, ipcMain, shell, safeStorage, dialog } = require('electron');
+const electron = require('electron');
+const isElectronRuntime = typeof electron === 'object' && electron !== null && Boolean(electron.app);
+const app = isElectronRuntime ? electron.app : null;
+const BrowserWindow = isElectronRuntime ? electron.BrowserWindow : null;
+const ipcMain = isElectronRuntime ? electron.ipcMain : null;
+const shell = isElectronRuntime ? electron.shell : null;
+const safeStorage = isElectronRuntime ? electron.safeStorage : null;
+const dialog = isElectronRuntime ? electron.dialog : null;
+
 const path = require('node:path');
 const fs = require('node:fs');
 const PharmacyDatabase = require('./database.cjs');
@@ -6,6 +14,7 @@ const PharmacyDatabase = require('./database.cjs');
 function logCrash(err, context = 'Fatal') {
   console.error(`[${context}]`, err);
   try {
+    if (!app) return;
     const userDataPath = app.getPath('userData');
     if (!fs.existsSync(userDataPath)) {
       fs.mkdirSync(userDataPath, { recursive: true });
@@ -16,42 +25,91 @@ function logCrash(err, context = 'Fatal') {
   } catch {}
 }
 
-process.on('uncaughtException', (err) => {
-  logCrash(err, 'uncaughtException');
-  try {
-    dialog.showErrorBox(
-      'Application Error',
-      `An unexpected error occurred:\n\n${err?.message || err}\n\nA crash log was saved to the application data directory.`
-    );
-  } catch {}
-});
+if (isElectronRuntime) {
+  process.on('uncaughtException', (err) => {
+    logCrash(err, 'uncaughtException');
+    try {
+      dialog?.showErrorBox(
+        'Application Error',
+        `An unexpected error occurred:\n\n${err?.message || err}\n\nA crash log was saved to the application data directory.`
+      );
+    } catch {}
+  });
 
-process.on('unhandledRejection', (reason) => {
-  logCrash(reason, 'unhandledRejection');
-});
+  process.on('unhandledRejection', (reason) => {
+    logCrash(reason, 'unhandledRejection');
+  });
 
-app.setName('Jeeva Pharmacy');
-if (process.platform === 'win32') {
-  app.setAppUserModelId('in.jeevapharmacy.pos');
+  app.setName('Jeeva Pharmacy');
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('in.jeevapharmacy.pos');
+  }
 }
 
 let mainWindow = null;
 let db = null;
 let activeSession = null;
 
-function assertAuthenticated() {
-  if (!activeSession) {
+const PERMISSION_MATRIX = {
+  'db:getAllData': ['ADMIN', 'PHARMACIST', 'CASHIER', 'PHARMACY_ASSISTANT'],
+  'db:saveProduct': ['ADMIN', 'PHARMACIST'],
+  'db:saveBatch': ['ADMIN', 'PHARMACIST'],
+  'db:createBatch': ['ADMIN', 'PHARMACIST'],
+  'db:updateBatchMetadata': ['ADMIN', 'PHARMACIST'],
+  'db:receiveStock': ['ADMIN', 'PHARMACIST'],
+  'db:adjustStock': ['ADMIN', 'PHARMACIST'],
+  'db:recordStockAdjustment': ['ADMIN', 'PHARMACIST'],
+  'db:createInvoice': ['ADMIN', 'PHARMACIST', 'CASHIER'],
+  'db:cancelInvoice': ['ADMIN', 'PHARMACIST'],
+  'db:updateInvoicePaymentMethod': ['ADMIN'],
+  'db:saveVendor': ['ADMIN', 'PHARMACIST'],
+  'db:logDpdp': ['ADMIN', 'PHARMACIST', 'CASHIER', 'PHARMACY_ASSISTANT'],
+  'db:saveSetting': ['ADMIN', 'PHARMACIST'],
+  'db:saveBackupSnapshot': ['ADMIN'],
+  'db:restoreBackup': ['ADMIN'],
+};
+
+const ALLOWED_SETTINGS_KEYS = new Set([
+  'active_theme',
+  'navigation_config',
+  'backup_config',
+  'printer_settings',
+  'user_profile',
+  'sales_returns',
+  'purchase_invoices',
+  'wanted_book',
+  'doctors',
+  'customers',
+  'sales_reps',
+  'racks',
+  'test_config',
+]);
+
+function assertAuthenticated(session = activeSession) {
+  if (!session) {
     throw new Error('Unauthenticated: An active authenticated session is required.');
   }
-  return activeSession;
+  return session;
 }
 
-function assertAdmin() {
-  const session = assertAuthenticated();
-  if (session.user.role !== 'ADMIN') {
+function assertAdmin(session = activeSession) {
+  const sess = assertAuthenticated(session);
+  if (sess.user.role !== 'ADMIN') {
     throw new Error('Unauthorized: Administrator privilege required for this operation.');
   }
-  return session;
+  return sess;
+}
+
+function assertPermission(operation, session = activeSession) {
+  const sess = assertAuthenticated(session);
+  const allowedRoles = PERMISSION_MATRIX[operation];
+  if (!allowedRoles) {
+    throw new Error(`Unauthorized: Operation '${operation}' is not configured in permission matrix.`);
+  }
+  if (!allowedRoles.includes(sess.user.role)) {
+    throw new Error(`Unauthorized: User role '${sess.user.role}' lacks permission for '${operation}'.`);
+  }
+  return sess;
 }
 
 function initializeDatabase() {
@@ -197,24 +255,44 @@ function registerIpcHandlers() {
     });
   };
 
-  // Protected Database Operations
+  // Protected Database Operations with Strict Role Permissions & Pharmacy Scoping
   handleDbIpc('db:getAllData', async () => {
-    assertAuthenticated();
+    assertPermission('db:getAllData');
     return db.getAllData(activeSession.pharmacy.id);
   });
 
   handleDbIpc('db:saveProduct', async (_, product) => {
-    assertAuthenticated();
-    return db.saveProduct({ ...product, pharmacyId: activeSession.pharmacy.id });
+    assertPermission('db:saveProduct');
+    return db.saveProduct(product, activeSession.pharmacy.id);
   });
 
   handleDbIpc('db:saveBatch', async (_, batch) => {
-    assertAuthenticated();
-    return db.saveBatch(batch);
+    assertPermission('db:saveBatch');
+    return db.saveBatch(batch, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:createBatch', async (_, batch) => {
+    assertPermission('db:createBatch');
+    return db.createBatch(batch, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:updateBatchMetadata', async (_, batch) => {
+    assertPermission('db:updateBatchMetadata');
+    return db.updateBatchMetadata(batch, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:receiveStock', async (_, payload) => {
+    assertPermission('db:receiveStock');
+    return db.receiveStock(payload, activeSession.user, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:adjustStock', async (_, payload) => {
+    assertPermission('db:adjustStock');
+    return db.adjustStock(payload, activeSession.user, activeSession.pharmacy.id);
   });
 
   handleDbIpc('db:createInvoice', async (_, payload) => {
-    assertAuthenticated();
+    assertPermission('db:createInvoice');
     const invoice = payload?.invoice || payload;
     const auditEntries = payload?.auditEntries || [];
     return db.createInvoice(
@@ -226,14 +304,15 @@ function registerIpcHandlers() {
       (auditEntries || []).map((a) => ({
         ...a,
         pharmacyId: activeSession.pharmacy.id,
-        operatorName: a.operatorName || activeSession.user.fullName || activeSession.user.username,
-        operatorRole: a.operatorRole || activeSession.user.role,
-      }))
+        operatorName: activeSession.user.fullName || activeSession.user.username,
+        operatorRole: activeSession.user.role,
+      })),
+      activeSession.pharmacy.id
     );
   });
 
   handleDbIpc('db:cancelInvoice', async (_, { invoiceId, reason, rollbackEntries }) => {
-    assertAuthenticated();
+    assertPermission('db:cancelInvoice');
     return db.cancelInvoice(
       invoiceId,
       reason,
@@ -242,32 +321,29 @@ function registerIpcHandlers() {
         pharmacyId: activeSession.pharmacy.id,
         operatorName: activeSession.user.fullName || activeSession.user.username,
         operatorRole: activeSession.user.role,
-      }))
+      })),
+      activeSession.pharmacy.id,
+      activeSession.user
     );
   });
 
   handleDbIpc('db:updateInvoicePaymentMethod', async (_, { invoiceId, newPaymentMethod }) => {
-    assertAuthenticated();
-    return db.updateInvoicePaymentMethod(invoiceId, newPaymentMethod);
+    assertPermission('db:updateInvoicePaymentMethod');
+    return db.updateInvoicePaymentMethod(invoiceId, newPaymentMethod, activeSession.pharmacy.id);
   });
 
   handleDbIpc('db:recordStockAdjustment', async (_, adjustment) => {
-    assertAuthenticated();
-    return db.recordStockAdjustment({
-      ...adjustment,
-      pharmacyId: activeSession.pharmacy.id,
-      operatorName: activeSession.user.fullName || activeSession.user.username,
-      operatorRole: activeSession.user.role,
-    });
+    assertPermission('db:recordStockAdjustment');
+    return db.recordStockAdjustment(adjustment, activeSession.pharmacy.id, activeSession.user);
   });
 
   handleDbIpc('db:saveVendor', async (_, vendor) => {
-    assertAuthenticated();
-    return db.saveVendor({ ...vendor, pharmacyId: activeSession.pharmacy.id });
+    assertPermission('db:saveVendor');
+    return db.saveVendor(vendor, activeSession.pharmacy.id);
   });
 
   handleDbIpc('db:logDpdp', async (_, entry) => {
-    assertAuthenticated();
+    assertPermission('db:logDpdp');
     return db.logDpdp({
       ...entry,
       pharmacyId: activeSession.pharmacy.id,
@@ -276,17 +352,23 @@ function registerIpcHandlers() {
   });
 
   handleDbIpc('db:saveSetting', async (_, { key, val }) => {
-    assertAuthenticated();
+    assertPermission('db:saveSetting');
+    if (key === 'remembered_session') {
+      throw new Error("Forbidden: 'remembered_session' is reserved for main process credential management.");
+    }
+    if (!ALLOWED_SETTINGS_KEYS.has(key)) {
+      throw new Error(`Forbidden: Setting key '${key}' is not permitted for renderer modification.`);
+    }
     return db.saveSetting(key, val);
   });
 
   handleDbIpc('db:saveBackupSnapshot', async (_, snapshot) => {
-    assertAdmin();
+    assertPermission('db:saveBackupSnapshot');
     return db.saveBackupSnapshot({ ...snapshot, pharmacyId: activeSession.pharmacy.id });
   });
 
   handleDbIpc('db:restoreBackup', async (_, backupData) => {
-    assertAdmin();
+    assertPermission('db:restoreBackup');
     return db.restoreBackup(backupData, activeSession.pharmacy.id);
   });
 
@@ -376,10 +458,12 @@ function createWindow() {
 
   mainWindow.maximize();
 
-  // Allow F12 or Ctrl+Shift+I to toggle DevTools for troubleshooting
+  // Allow F12 or Ctrl+Shift+I to toggle DevTools only in development/unpackaged builds
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
-      mainWindow.webContents.toggleDevTools();
+      if (!app?.isPackaged) {
+        mainWindow.webContents.toggleDevTools();
+      }
       event.preventDefault();
     }
   });
@@ -427,33 +511,47 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  try {
-    initializeDatabase();
-  } catch (err) {
-    logCrash(err, 'initializeDatabase');
-    dialog.showErrorBox(
-      'Database Error',
-      `Failed to initialize local pharmacy database:\n\n${err?.message || err}\n\nPlease check crash.log or contact technical support.`
-    );
-    return;
-  }
+if (isElectronRuntime) {
+  app.whenReady().then(() => {
+    try {
+      initializeDatabase();
+    } catch (err) {
+      logCrash(err, 'initializeDatabase');
+      dialog.showErrorBox(
+        'Database Error',
+        `Failed to initialize local pharmacy database:\n\n${err?.message || err}\n\nPlease check crash.log or contact technical support.`
+      );
+      return;
+    }
 
-  registerIpcHandlers();
-  createWindow();
+    registerIpcHandlers();
+    createWindow();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  }).catch(err => {
+    logCrash(err, 'app.whenReady');
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
     }
   });
-}).catch(err => {
-  logCrash(err, 'app.whenReady');
-});
+}
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+module.exports = {
+  PERMISSION_MATRIX,
+  ALLOWED_SETTINGS_KEYS,
+  assertAuthenticated,
+  assertAdmin,
+  assertPermission,
+  registerIpcHandlers,
+  getActiveSession: () => activeSession,
+  setActiveSession: (sess) => { activeSession = sess; },
+  setDatabase: (d) => { db = d; },
+};
 

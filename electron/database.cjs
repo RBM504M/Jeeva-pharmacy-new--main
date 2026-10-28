@@ -732,7 +732,14 @@ class PharmacyDatabase {
     };
   }
 
-  saveProduct(product) {
+  saveProduct(product, pharmacyId = null) {
+    const targetPharmacyId = pharmacyId || product.pharmacyId || null;
+    if (product.id) {
+      const existing = this.db.prepare('SELECT pharmacyId FROM products WHERE id = ?').get(product.id);
+      if (existing && targetPharmacyId && existing.pharmacyId && existing.pharmacyId !== targetPharmacyId) {
+        return { success: false, error: 'Product belongs to another pharmacy.' };
+      }
+    }
     const now = new Date().toISOString();
     const stmt = this.db.prepare(`
       INSERT INTO products (
@@ -755,7 +762,7 @@ class PharmacyDatabase {
     `);
     stmt.run(
       product.id,
-      product.pharmacyId || null,
+      targetPharmacyId,
       product.name || 'Unnamed Product',
       product.genericComposition || 'Generic Formulation',
       product.manufacturer || 'General Pharma',
@@ -773,48 +780,246 @@ class PharmacyDatabase {
     return { success: true };
   }
 
-  saveBatch(batch) {
+  getBatchWithProduct(batchId) {
+    return this.db.prepare(`
+      SELECT b.*, p.pharmacyId as productPharmacyId, p.name as productName,
+             p.genericComposition, p.drugSchedule, p.rackLocation as productRackLocation
+      FROM batches b
+      JOIN products p ON b.productId = p.id
+      WHERE b.id = ?
+    `).get(batchId);
+  }
+
+  createBatch(batch, pharmacyId = null) {
+    if (!batch || !batch.id || !batch.productId) {
+      return { success: false, error: 'Missing batch id or productId.' };
+    }
+    const product = this.db.prepare('SELECT id, pharmacyId, name, genericComposition, drugSchedule, rackLocation FROM products WHERE id = ?').get(batch.productId);
+    if (!product && pharmacyId) {
+      return { success: false, error: `Product with ID '${batch.productId}' not found.` };
+    }
+    if (pharmacyId && product && product.pharmacyId && product.pharmacyId !== pharmacyId) {
+      return { success: false, error: 'Product belongs to another pharmacy.' };
+    }
+
+    const existing = this.db.prepare('SELECT id FROM batches WHERE id = ?').get(batch.id);
+    if (existing) {
+      return { success: false, error: `Batch with ID '${batch.id}' already exists.` };
+    }
+
     const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
+    const initialStock = Math.max(0, parseInt(batch.totalTablets, 10) || 0);
+
+    this.db.prepare(`
       INSERT INTO batches (
         id, productId, batchNumber, barcode, expiryDate, manufacturingDate,
         costPricePerStrip, mrpPerStrip, sellingPricePerStrip, gstRate, totalTablets,
         vendorId, createdAt, updatedAt
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        productId = excluded.productId,
-        batchNumber = excluded.batchNumber,
-        barcode = excluded.barcode,
-        expiryDate = excluded.expiryDate,
-        manufacturingDate = excluded.manufacturingDate,
-        costPricePerStrip = excluded.costPricePerStrip,
-        mrpPerStrip = excluded.mrpPerStrip,
-        sellingPricePerStrip = excluded.sellingPricePerStrip,
-        gstRate = excluded.gstRate,
-        totalTablets = excluded.totalTablets,
-        vendorId = excluded.vendorId,
-        updatedAt = excluded.updatedAt
-    `);
-    stmt.run(
+    `).run(
       batch.id,
       batch.productId,
-      batch.batchNumber,
+      batch.batchNumber || 'UNKNOWN',
       batch.barcode || null,
-      batch.expiryDate,
+      batch.expiryDate || '2099-12-31',
       batch.manufacturingDate || now.split('T')[0],
       Number(batch.costPricePerStrip) || 0,
       Number(batch.mrpPerStrip) || 0,
       Number(batch.sellingPricePerStrip) || 0,
       Number(batch.gstRate) || 0,
-      Number(batch.totalTablets) || 0,
+      initialStock,
       batch.vendorId || null,
       batch.createdAt || now,
       now
     );
+
+    return { success: true, batchId: batch.id };
+  }
+
+  updateBatchMetadata(batch, pharmacyId = null) {
+    if (!batch || !batch.id) {
+      return { success: false, error: 'Batch id is required.' };
+    }
+    const existing = this.getBatchWithProduct(batch.id);
+    if (!existing) {
+      return { success: false, error: `Batch with ID '${batch.id}' not found.` };
+    }
+    if (pharmacyId && existing.productPharmacyId && existing.productPharmacyId !== pharmacyId) {
+      return { success: false, error: 'Batch belongs to another pharmacy.' };
+    }
+
+    const now = new Date().toISOString();
+    // CRITICAL: totalTablets is NOT updated; preserved from database
+    this.db.prepare(`
+      UPDATE batches SET
+        batchNumber = ?,
+        barcode = ?,
+        expiryDate = ?,
+        manufacturingDate = ?,
+        costPricePerStrip = ?,
+        mrpPerStrip = ?,
+        sellingPricePerStrip = ?,
+        gstRate = ?,
+        vendorId = ?,
+        updatedAt = ?
+      WHERE id = ?
+    `).run(
+      batch.batchNumber !== undefined ? batch.batchNumber : existing.batchNumber,
+      batch.barcode !== undefined ? batch.barcode : existing.barcode,
+      batch.expiryDate !== undefined ? batch.expiryDate : existing.expiryDate,
+      batch.manufacturingDate !== undefined ? batch.manufacturingDate : existing.manufacturingDate,
+      batch.costPricePerStrip !== undefined ? Number(batch.costPricePerStrip) : existing.costPricePerStrip,
+      batch.mrpPerStrip !== undefined ? Number(batch.mrpPerStrip) : existing.mrpPerStrip,
+      batch.sellingPricePerStrip !== undefined ? Number(batch.sellingPricePerStrip) : existing.sellingPricePerStrip,
+      batch.gstRate !== undefined ? Number(batch.gstRate) : existing.gstRate,
+      batch.vendorId !== undefined ? batch.vendorId : existing.vendorId,
+      now,
+      batch.id
+    );
+
     return { success: true };
   }
 
-  createInvoice(invoice, auditEntries = []) {
+  saveBatch(batch, pharmacyId = null) {
+    if (!batch || !batch.id) {
+      return { success: false, error: 'Batch id is required.' };
+    }
+    const existing = this.db.prepare('SELECT id FROM batches WHERE id = ?').get(batch.id);
+    if (existing) {
+      return this.updateBatchMetadata(batch, pharmacyId);
+    }
+    return this.createBatch(batch, pharmacyId);
+  }
+
+  adjustStock(params, operator = {}, pharmacyId = null) {
+    if (!params || !params.batchId) {
+      return { success: false, error: 'Batch ID is required for stock adjustment.' };
+    }
+    this.db.exec('BEGIN TRANSACTION');
+    try {
+      const { batchId, adjustmentType, quantityChangeTablets, newStockTablets, reason, referenceNumber, rackLocation } = params;
+      const existing = this.getBatchWithProduct(batchId);
+
+      if (!existing) {
+        this.db.exec('ROLLBACK');
+        return { success: false, error: `Batch with ID '${batchId}' not found.` };
+      }
+      if (pharmacyId && existing.productPharmacyId && existing.productPharmacyId !== pharmacyId) {
+        this.db.exec('ROLLBACK');
+        return { success: false, error: 'Batch belongs to another pharmacy.' };
+      }
+
+      const previousStockTablets = existing.totalTablets;
+      let finalNewStock = previousStockTablets;
+      let delta = 0;
+
+      if (newStockTablets !== undefined && newStockTablets !== null) {
+        finalNewStock = Math.max(0, parseInt(newStockTablets, 10));
+        delta = finalNewStock - previousStockTablets;
+      } else if (quantityChangeTablets !== undefined && quantityChangeTablets !== null) {
+        delta = parseInt(quantityChangeTablets, 10);
+        finalNewStock = previousStockTablets + delta;
+        if (finalNewStock < 0) {
+          this.db.exec('ROLLBACK');
+          return {
+            success: false,
+            error: `Insufficient stock on hand for adjustment. Available: ${previousStockTablets}, requested deduction: ${Math.abs(delta)}`
+          };
+        }
+      } else {
+        this.db.exec('ROLLBACK');
+        return { success: false, error: 'Either newStockTablets or quantityChangeTablets must be provided.' };
+      }
+
+      const now = new Date().toISOString();
+      this.db.prepare('UPDATE batches SET totalTablets = ?, updatedAt = ? WHERE id = ?').run(finalNewStock, now, batchId);
+
+      const opName = operator.fullName || operator.username || operator.name || 'Staff';
+      const opRole = operator.role || 'PHARMACIST';
+      const logId = 'aud_' + crypto.randomUUID();
+
+      this.db.prepare(`
+        INSERT INTO stock_audit_logs (
+          id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
+          batchId, batchNumber, expiryDate, drugSchedule, adjustmentType, quantityChangeTablets,
+          formattedChange, previousStockTablets, newStockTablets, formattedPreviousStock,
+          formattedNewStock, referenceNumber, operatorName, operatorRole, reason, vendorId, vendorName, rackLocation
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        logId,
+        pharmacyId || existing.productPharmacyId || null,
+        now,
+        null,
+        existing.productId,
+        existing.productName,
+        existing.genericComposition || null,
+        existing.id,
+        existing.batchNumber,
+        existing.expiryDate,
+        existing.drugSchedule || null,
+        adjustmentType || (delta >= 0 ? 'STOCK_ADDED' : 'STOCK_DEDUCTED'),
+        delta,
+        `${delta >= 0 ? '+' : ''}${delta} tablets`,
+        previousStockTablets,
+        finalNewStock,
+        `${previousStockTablets} tablets`,
+        `${finalNewStock} tablets`,
+        referenceNumber || `ADJ-${Date.now()}`,
+        opName,
+        opRole,
+        reason || 'Manual inventory adjustment',
+        existing.vendorId || null,
+        null,
+        rackLocation || existing.productRackLocation || null
+      );
+
+      this.db.exec('COMMIT');
+      return { success: true, newStockTablets: finalNewStock, previousStockTablets, change: delta };
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      return { success: false, error: err.message };
+    }
+  }
+
+  receiveStock(params, operator = {}, pharmacyId = null) {
+    if (!params || !params.batchId) {
+      return { success: false, error: 'Batch ID is required for stock receipt.' };
+    }
+    const qty = Math.max(0, parseInt(params.quantityChangeTablets, 10) || 0);
+    if (qty <= 0) {
+      return { success: false, error: 'Received quantity must be greater than zero.' };
+    }
+    return this.adjustStock(
+      {
+        batchId: params.batchId,
+        adjustmentType: 'PURCHASE_INWARD',
+        quantityChangeTablets: qty,
+        reason: params.reason || 'Inward stock receipt',
+        referenceNumber: params.referenceNumber || `GRN-${Date.now()}`,
+        rackLocation: params.rackLocation,
+      },
+      operator,
+      pharmacyId
+    );
+  }
+
+  createInvoice(invoice, auditEntries = [], pharmacyId = null) {
+    const targetPharmacyId = pharmacyId || invoice.pharmacyId || null;
+
+    // Verify batch ownership for all items in the invoice
+    for (const item of (invoice.items || [])) {
+      const batchId = item.batchId || (item.batch && item.batch.id);
+      if (batchId) {
+        const b = this.getBatchWithProduct(batchId);
+        if (!b) {
+          return { success: false, error: `Batch '${batchId}' not found.` };
+        }
+        if (targetPharmacyId && b.productPharmacyId && b.productPharmacyId !== targetPharmacyId) {
+          return { success: false, error: `Batch '${batchId}' belongs to another pharmacy.` };
+        }
+      }
+    }
+
     this.db.exec('BEGIN TRANSACTION');
     try {
       const invStmt = this.db.prepare(`
@@ -826,7 +1031,7 @@ class PharmacyDatabase {
       `);
       invStmt.run(
         invoice.id,
-        invoice.pharmacyId || null,
+        targetPharmacyId,
         invoice.invoiceNumber,
         invoice.invoiceDate,
         invoice.isInterState ? 1 : 0,
@@ -875,7 +1080,7 @@ class PharmacyDatabase {
         for (const entry of auditEntries) {
           auditStmt.run(
             entry.id,
-            entry.pharmacyId || invoice.pharmacyId || null,
+            targetPharmacyId,
             entry.timestamp,
             entry.formattedTimestamp || null,
             entry.productId,
@@ -916,7 +1121,24 @@ class PharmacyDatabase {
     return this.createInvoice(invoice);
   }
 
-  cancelInvoice(invoiceId, reason, rollbackEntries = []) {
+  cancelInvoice(invoiceId, reason, rollbackEntries = [], pharmacyId = null, operator = {}) {
+    if (!invoiceId) {
+      return { success: false, error: 'Invoice ID is required for cancellation.' };
+    }
+    const inv = this.db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+    if (!inv) {
+      return { success: false, error: `Invoice with ID '${invoiceId}' not found.` };
+    }
+    if (pharmacyId && inv.pharmacyId && inv.pharmacyId !== pharmacyId) {
+      return { success: false, error: 'Invoice belongs to another pharmacy.' };
+    }
+    if (inv.status === 'CANCELLED') {
+      return { success: false, error: 'Invoice is already cancelled.' };
+    }
+    if (!reason || !reason.trim()) {
+      return { success: false, error: 'Cancellation reason is required.' };
+    }
+
     this.db.exec('BEGIN TRANSACTION');
     try {
       this.db.prepare("UPDATE invoices SET status = 'CANCELLED' WHERE id = ?").run(invoiceId);
@@ -934,31 +1156,40 @@ class PharmacyDatabase {
       `);
 
       const now = new Date().toISOString();
+      const opName = operator.fullName || operator.username || 'Staff';
+      const opRole = operator.role || 'PHARMACIST';
+      const targetPharmacy = pharmacyId || inv.pharmacyId || null;
+
       for (const entry of rollbackEntries) {
-        updateBatchStmt.run(entry.quantityChangeTablets, now, entry.batchId);
+        const currentBatch = this.getBatchWithProduct(entry.batchId);
+        const prevStock = currentBatch ? currentBatch.totalTablets : (entry.previousStockTablets || 0);
+        const qty = entry.quantityChangeTablets || 0;
+        const newStock = prevStock + qty;
+
+        updateBatchStmt.run(qty, now, entry.batchId);
         auditStmt.run(
-          entry.id,
-          entry.pharmacyId || null,
-          entry.timestamp,
-          entry.formattedTimestamp,
+          entry.id || ('aud_' + crypto.randomUUID()),
+          targetPharmacy,
+          entry.timestamp || now,
+          entry.formattedTimestamp || null,
           entry.productId,
           entry.productName,
-          entry.genericComposition,
+          entry.genericComposition || null,
           entry.batchId,
           entry.batchNumber,
-          entry.expiryDate,
-          entry.drugSchedule,
-          entry.adjustmentType,
-          entry.quantityChangeTablets,
-          entry.formattedChange,
-          entry.previousStockTablets,
-          entry.newStockTablets,
-          entry.formattedPreviousStock,
-          entry.formattedNewStock,
-          entry.referenceNumber,
-          entry.operatorName,
-          entry.operatorRole,
-          entry.reason,
+          entry.expiryDate || null,
+          entry.drugSchedule || null,
+          entry.adjustmentType || 'SALE_RETURN',
+          qty,
+          entry.formattedChange || `+${qty} tablets`,
+          prevStock,
+          newStock,
+          entry.formattedPreviousStock || `${prevStock} tablets`,
+          entry.formattedNewStock || `${newStock} tablets`,
+          entry.referenceNumber || inv.invoiceNumber,
+          opName,
+          opRole,
+          reason,
           entry.vendorId || null,
           entry.vendorName || null,
           entry.rackLocation || null
@@ -974,9 +1205,23 @@ class PharmacyDatabase {
     }
   }
 
-  updateInvoicePaymentMethod(invoiceId, newPaymentMethod) {
+  updateInvoicePaymentMethod(invoiceId, newPaymentMethod, pharmacyId = null) {
+    if (!invoiceId || !newPaymentMethod) {
+      return { success: false, error: 'Invoice ID and new payment method are required.' };
+    }
+    const inv = this.db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+    if (!inv) {
+      return { success: false, error: `Invoice with ID '${invoiceId}' not found.` };
+    }
+    if (pharmacyId && inv.pharmacyId && inv.pharmacyId !== pharmacyId) {
+      return { success: false, error: 'Invoice belongs to another pharmacy.' };
+    }
+    const validMethods = ['CASH', 'UPI', 'CARD', 'CREDIT'];
+    if (!validMethods.includes(newPaymentMethod.toUpperCase())) {
+      return { success: false, error: `Invalid payment method: ${newPaymentMethod}` };
+    }
     try {
-      this.db.prepare('UPDATE invoices SET paymentMethod = ? WHERE id = ?').run(newPaymentMethod, invoiceId);
+      this.db.prepare('UPDATE invoices SET paymentMethod = ? WHERE id = ?').run(newPaymentMethod.toUpperCase(), invoiceId);
       return { success: true };
     } catch (e) {
       console.error('Failed to update invoice payment method in SQLite:', e);
@@ -984,9 +1229,34 @@ class PharmacyDatabase {
     }
   }
 
-  recordStockAdjustment(logEntry) {
+  recordStockAdjustment(logEntry, pharmacyId = null, operator = {}) {
+    if (!logEntry || !logEntry.batchId) {
+      return { success: false, error: 'Batch ID is required for stock adjustment.' };
+    }
+    const existing = this.getBatchWithProduct(logEntry.batchId);
+    if (!existing && pharmacyId) {
+      return { success: false, error: `Batch with ID '${logEntry.batchId}' not found.` };
+    }
+    if (pharmacyId && existing && existing.productPharmacyId && existing.productPharmacyId !== pharmacyId) {
+      return { success: false, error: 'Batch belongs to another pharmacy.' };
+    }
+
+    const previousStockTablets = existing ? existing.totalTablets : (logEntry.previousStockTablets || 0);
+    const finalNewStock = logEntry.newStockTablets !== undefined
+      ? Math.max(0, parseInt(logEntry.newStockTablets, 10))
+      : previousStockTablets + (parseInt(logEntry.quantityChangeTablets, 10) || 0);
+
+    const delta = logEntry.quantityChangeTablets !== undefined
+      ? parseInt(logEntry.quantityChangeTablets, 10)
+      : (finalNewStock - previousStockTablets);
+
     this.db.exec('BEGIN TRANSACTION');
     try {
+      const now = new Date().toISOString();
+      const opName = operator.fullName || operator.username || logEntry.operatorName || 'Staff';
+      const opRole = operator.role || logEntry.operatorRole || 'PHARMACIST';
+      const targetPharmacy = pharmacyId || (existing ? existing.productPharmacyId : null) || logEntry.pharmacyId || null;
+
       const stmt = this.db.prepare(`
         INSERT INTO stock_audit_logs (
           id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
@@ -996,40 +1266,42 @@ class PharmacyDatabase {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
-        logEntry.id,
-        logEntry.pharmacyId || null,
-        logEntry.timestamp,
+        logEntry.id || ('aud_' + crypto.randomUUID()),
+        targetPharmacy,
+        logEntry.timestamp || now,
         logEntry.formattedTimestamp || null,
-        logEntry.productId,
-        logEntry.productName,
-        logEntry.genericComposition || null,
-        logEntry.batchId,
-        logEntry.batchNumber,
-        logEntry.expiryDate || null,
-        logEntry.drugSchedule || null,
-        logEntry.adjustmentType,
-        logEntry.quantityChangeTablets,
-        logEntry.formattedChange || null,
-        logEntry.previousStockTablets,
-        logEntry.newStockTablets,
-        logEntry.formattedPreviousStock || null,
-        logEntry.formattedNewStock || null,
-        logEntry.referenceNumber,
-        logEntry.operatorName,
-        logEntry.operatorRole,
-        logEntry.reason,
-        logEntry.vendorId || null,
+        existing ? existing.productId : (logEntry.productId || 'UNKNOWN_PROD'),
+        existing ? existing.productName : (logEntry.productName || 'Unknown Product'),
+        existing ? existing.genericComposition : (logEntry.genericComposition || null),
+        existing ? existing.id : logEntry.batchId,
+        existing ? existing.batchNumber : (logEntry.batchNumber || 'UNKNOWN_BATCH'),
+        existing ? existing.expiryDate : (logEntry.expiryDate || null),
+        existing ? existing.drugSchedule : (logEntry.drugSchedule || null),
+        logEntry.adjustmentType || 'MANUAL_ADJUSTMENT',
+        delta,
+        logEntry.formattedChange || `${delta >= 0 ? '+' : ''}${delta} tablets`,
+        previousStockTablets,
+        finalNewStock,
+        logEntry.formattedPreviousStock || `${previousStockTablets} tablets`,
+        logEntry.formattedNewStock || `${finalNewStock} tablets`,
+        logEntry.referenceNumber || `ADJ-${Date.now()}`,
+        opName,
+        opRole,
+        logEntry.reason || 'Manual stock adjustment',
+        logEntry.vendorId || (existing ? existing.vendorId : null) || null,
         logEntry.vendorName || null,
-        logEntry.rackLocation || null
+        logEntry.rackLocation || (existing ? existing.productRackLocation : null) || null
       );
 
-      const updateBatchStmt = this.db.prepare(
-        'UPDATE batches SET totalTablets = ?, updatedAt = ? WHERE id = ?'
-      );
-      updateBatchStmt.run(logEntry.newStockTablets, new Date().toISOString(), logEntry.batchId);
+      if (existing) {
+        const updateBatchStmt = this.db.prepare(
+          'UPDATE batches SET totalTablets = ?, updatedAt = ? WHERE id = ?'
+        );
+        updateBatchStmt.run(finalNewStock, now, logEntry.batchId);
+      }
 
       this.db.exec('COMMIT');
-      return { success: true };
+      return { success: true, previousStockTablets, newStockTablets: finalNewStock };
     } catch (e) {
       this.db.exec('ROLLBACK');
       console.error('Failed to record stock adjustment in SQLite:', e);
@@ -1037,7 +1309,14 @@ class PharmacyDatabase {
     }
   }
 
-  saveVendor(vendor) {
+  saveVendor(vendor, pharmacyId = null) {
+    const targetPharmacyId = pharmacyId || vendor.pharmacyId || null;
+    if (vendor.id) {
+      const existing = this.db.prepare('SELECT pharmacyId FROM vendors WHERE id = ?').get(vendor.id);
+      if (existing && targetPharmacyId && existing.pharmacyId && existing.pharmacyId !== targetPharmacyId) {
+        return { success: false, error: 'Vendor belongs to another pharmacy.' };
+      }
+    }
     const stmt = this.db.prepare(`
       INSERT INTO vendors (
         id, pharmacyId, companyName, contactPerson, phone, email, gstin, drugLicenseNumber, state, creditPeriodDays, balanceDue, isActive
@@ -1056,7 +1335,7 @@ class PharmacyDatabase {
     `);
     stmt.run(
       vendor.id,
-      vendor.pharmacyId || null,
+      targetPharmacyId,
       vendor.companyName || vendor.name || '',
       vendor.contactPerson || '',
       vendor.phone || '',
