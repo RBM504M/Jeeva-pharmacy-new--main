@@ -25,6 +25,7 @@ export interface ElectronAPI {
     purchaseInvoices?: InwardPurchaseInvoice[];
     purchaseReceipts?: InwardPurchaseInvoice[];
     salesReturns?: any[];
+    wantedBook?: any[];
     settings: {
       printer_settings?: PrinterSettings;
       user_profile?: UserProfile;

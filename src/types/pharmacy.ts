@@ -193,7 +193,7 @@ export interface Invoice {
   grandTotal: number;
   totalAmount?: number;
   paymentMethod: PaymentMethod;
-  status: 'COMPLETED' | 'CANCELLED' | 'RETURNED';
+  status: 'COMPLETED' | 'CANCELLED' | 'RETURNED' | 'PARTIALLY_RETURNED';
   cashierName: string;
   taxSlabBreakdowns: TaxBreakdownSummary[];
   createdAt: string;
@@ -288,7 +288,8 @@ export type StockAdjustmentType =
   | 'VENDOR_RETURN'          // Returned to supplier/wholesaler (e.g. expiry/damaged)
   | 'INWARD_PURCHASE'        // Inward stock receipt / GRN from distributor
   | 'DAMAGE_WRITEOFF'        // Broken blister/damaged bottle write-off
-  | 'EXPIRY_DISPOSAL';       // Disposal of expired batches
+  | 'EXPIRY_DISPOSAL'        // Disposal of expired batches
+  | 'SALE_RETURN';           // Customer POS sales return
 
 export interface StockAuditLogEntry {
   id: string;

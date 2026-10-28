@@ -2212,7 +2212,7 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
 
     // Check if fully returned
     const allReturned = inv.items.every((orig) => {
-      const ret = params.returnedItems.find((r) => r.cartItemId === orig.cartItemId || r.cartItemId === orig.id);
+      const ret = params.returnedItems.find((r) => r.cartItemId === orig.cartItemId || r.cartItemId === (orig as any).id);
       return ret && ret.returnQuantity >= orig.quantity;
     });
 
