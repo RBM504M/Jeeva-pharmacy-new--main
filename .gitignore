@@ -1,8 +1,15 @@
 node_modules/
 build/
 dist/
+release/
 coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.asar
