@@ -13,23 +13,17 @@ import {
   SEED_PURCHASE_INVOICES,
   SEED_SALES_RETURNS,
 } from '../data/shopAidSeedData';
+import { testInitialData } from './fixtures/testFixtures';
 
 describe('ShopAID Pharmacy Management Integration Tests', () => {
-  test('initial seed data conforms to ShopAID reference domain model', () => {
-    expect(SEED_DOCTORS.length).toBeGreaterThan(0);
-    expect(SEED_CUSTOMERS.length).toBeGreaterThan(0);
-    expect(SEED_SALES_REPS.length).toBeGreaterThan(0);
-    expect(SEED_RACKS.length).toBeGreaterThan(0);
-    expect(SEED_WANTED_BOOK.length).toBeGreaterThan(0);
-    expect(SEED_PURCHASE_INVOICES.length).toBeGreaterThan(0);
-    expect(SEED_SALES_RETURNS.length).toBeGreaterThan(0);
-
-    // Verify statutory doctor registration format
-    expect(SEED_DOCTORS[0].regNumber).toMatch(/^TNMC-/);
-
-    // Verify rack location structure
-    expect(SEED_RACKS[0].rackCode).toBeDefined();
-    expect(SEED_RACKS[0].shelfNumber).toBeDefined();
+  test('initial seed data is completely purged and empty for clean installation', () => {
+    expect(SEED_DOCTORS.length).toBe(0);
+    expect(SEED_CUSTOMERS.length).toBe(0);
+    expect(SEED_SALES_REPS.length).toBe(0);
+    expect(SEED_RACKS.length).toBe(0);
+    expect(SEED_WANTED_BOOK.length).toBe(0);
+    expect(SEED_PURCHASE_INVOICES.length).toBe(0);
+    expect(SEED_SALES_RETURNS.length).toBe(0);
   });
 
   test('cancelInvoice (Sales Cancellation) voids transaction and reverses batch inventory', () => {
@@ -64,7 +58,7 @@ describe('ShopAID Pharmacy Management Integration Tests', () => {
     };
 
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <Harness />
       </PharmacyProvider>
     );
@@ -109,7 +103,7 @@ describe('ShopAID Pharmacy Management Integration Tests', () => {
     };
 
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <Harness />
       </PharmacyProvider>
     );
@@ -151,7 +145,7 @@ describe('ShopAID Pharmacy Management Integration Tests', () => {
     };
 
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <Harness />
       </PharmacyProvider>
     );
@@ -229,7 +223,7 @@ describe('ShopAID Pharmacy Management Integration Tests', () => {
     };
 
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <Harness />
       </PharmacyProvider>
     );
@@ -271,7 +265,7 @@ describe('ShopAID Pharmacy Management Integration Tests', () => {
     };
 
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <Harness />
       </PharmacyProvider>
     );
@@ -323,7 +317,7 @@ describe('ShopAID Pharmacy Management Integration Tests', () => {
 
   test('ProductBriefModal renders medicine details and clinical status', () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <ProductBriefModal isOpen={true} onClose={() => {}} />
       </PharmacyProvider>
     );

@@ -168,7 +168,7 @@ export const OrderManagementView: React.FC<OrderManagementViewProps> = ({
           leadTimeDays,
           suggestedOrderStrips: suggestedStrips,
           estimatedCost,
-          preferredVendorName: vendor?.companyName || 'Sun Medicare',
+          preferredVendorName: vendor?.companyName || 'Unassigned Vendor',
           preferredVendorId: vendor?.id,
         };
       })

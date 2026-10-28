@@ -233,7 +233,32 @@ const getStoredOrFallback = <T,>(key: string, testFallback: T, liveFallback: T):
   }
 };
 
-export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export interface PharmacyProviderInitialData {
+  products?: Product[];
+  batches?: Batch[];
+  invoices?: Invoice[];
+  vendors?: Vendor[];
+  doctors?: MasterDoctor[];
+  customers?: MasterCustomer[];
+  salesReps?: MasterSalesRep[];
+  racks?: MasterRack[];
+  manufacturers?: MasterManufacturer[];
+  scheduleTypes?: MasterScheduleType[];
+  wantedBook?: WantedBookItem[];
+  purchaseInvoices?: InwardPurchaseInvoice[];
+  salesReturns?: SalesReturnRecord[];
+  dpdpLogs?: DpdpLogEntry[];
+  stockAuditLogs?: StockAuditLogEntry[];
+  backupConfig?: AutomatedBackupConfig;
+  backupSnapshots?: BackupSnapshot[];
+}
+
+export interface PharmacyProviderProps {
+  children: React.ReactNode;
+  initialData?: PharmacyProviderInitialData;
+}
+
+export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, initialData }) => {
   const [currentUser, setCurrentUser] = useState<UserProfile>(DEFAULT_USER_PROFILE);
   const [pharmacyAccount, setPharmacyAccount] = useState<PharmacyAccount | null>(() => {
     try {
@@ -386,55 +411,58 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [navigationConfig]);
 
-  // Master Data Collections (Empty clean slate for runtime, seeded for Vitest test suites)
+  // Master Data Collections (Defaults to clean empty state - zero seeded records)
   const [products, setProducts] = useState<Product[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.PRODUCTS, SEED_PRODUCTS, [])
+    initialData?.products ?? getStoredOrFallback(STORAGE_KEYS.PRODUCTS, [], [])
   );
   const [batches, setBatches] = useState<Batch[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.BATCHES, SEED_BATCHES, [])
+    initialData?.batches ?? getStoredOrFallback(STORAGE_KEYS.BATCHES, [], [])
   );
   const [invoices, setInvoices] = useState<Invoice[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.INVOICES, SEED_INVOICES, [])
+    initialData?.invoices ?? getStoredOrFallback(STORAGE_KEYS.INVOICES, [], [])
   );
   const [vendors, setVendors] = useState<Vendor[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.VENDORS, SEED_VENDORS, [])
+    initialData?.vendors ?? getStoredOrFallback(STORAGE_KEYS.VENDORS, [], [])
   );
   const [dpdpLogs, setDpdpLogs] = useState<DpdpLogEntry[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.DPDP_LOGS, SEED_DPDP_LOGS, [])
+    initialData?.dpdpLogs ?? getStoredOrFallback(STORAGE_KEYS.DPDP_LOGS, [], [])
   );
   const [stockAuditLogs, setStockAuditLogs] = useState<StockAuditLogEntry[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.AUDIT_LOGS, SEED_STOCK_AUDIT_LOGS, [])
+    initialData?.stockAuditLogs ?? getStoredOrFallback(STORAGE_KEYS.AUDIT_LOGS, [], [])
   );
 
   // ShopAID Core Master & Operations State
   const [doctors, setDoctors] = useState<MasterDoctor[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.DOCTORS, SEED_DOCTORS, [])
+    initialData?.doctors ?? getStoredOrFallback(STORAGE_KEYS.DOCTORS, [], [])
   );
   const [customers, setCustomers] = useState<MasterCustomer[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.CUSTOMERS, SEED_CUSTOMERS, [])
+    initialData?.customers ?? getStoredOrFallback(STORAGE_KEYS.CUSTOMERS, [], [])
   );
   const [salesReps, setSalesReps] = useState<MasterSalesRep[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.SALES_REPS, SEED_SALES_REPS, [])
+    initialData?.salesReps ?? getStoredOrFallback(STORAGE_KEYS.SALES_REPS, [], [])
   );
   const [racks, setRacks] = useState<MasterRack[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.RACKS, SEED_RACKS, [])
+    initialData?.racks ?? getStoredOrFallback(STORAGE_KEYS.RACKS, [], [])
   );
   const [manufacturers, setManufacturers] = useState<MasterManufacturer[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.MANUFACTURERS, SEED_MANUFACTURERS, [])
+    initialData?.manufacturers ?? getStoredOrFallback(STORAGE_KEYS.MANUFACTURERS, [], [])
   );
-  const [scheduleTypes] = useState<MasterScheduleType[]>(SEED_SCHEDULE_TYPES);
+  const [scheduleTypes] = useState<MasterScheduleType[]>(() =>
+    initialData?.scheduleTypes ?? SEED_SCHEDULE_TYPES
+  );
   const [wantedBook, setWantedBook] = useState<WantedBookItem[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.WANTED_BOOK, SEED_WANTED_BOOK, [])
+    initialData?.wantedBook ?? getStoredOrFallback(STORAGE_KEYS.WANTED_BOOK, [], [])
   );
   const [purchaseInvoices, setPurchaseInvoices] = useState<InwardPurchaseInvoice[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.PURCHASES, SEED_PURCHASE_INVOICES, [])
+    initialData?.purchaseInvoices ?? getStoredOrFallback(STORAGE_KEYS.PURCHASES, [], [])
   );
   const [salesReturns, setSalesReturns] = useState<SalesReturnRecord[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.SALES_RETURNS, SEED_SALES_RETURNS, [])
+    initialData?.salesReturns ?? getStoredOrFallback(STORAGE_KEYS.SALES_RETURNS, [], [])
   );
 
   // Automated Database Backup & Archival State
   const [backupConfig, setBackupConfig] = useState<AutomatedBackupConfig>(() => {
+    if (initialData?.backupConfig) return initialData.backupConfig;
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.BACKUP_CONFIG);
       return stored ? JSON.parse(stored) : DEFAULT_BACKUP_CONFIG;
@@ -444,7 +472,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
 
   const [backupSnapshots, setBackupSnapshots] = useState<BackupSnapshot[]>(() =>
-    getStoredOrFallback(STORAGE_KEYS.BACKUP_SNAPSHOTS, SEED_BACKUP_SNAPSHOTS, [])
+    initialData?.backupSnapshots ?? getStoredOrFallback(STORAGE_KEYS.BACKUP_SNAPSHOTS, [], [])
   );
 
   // Load persistent SQLite data from Electron backend if available

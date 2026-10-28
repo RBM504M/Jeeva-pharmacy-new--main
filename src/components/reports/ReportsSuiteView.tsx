@@ -132,7 +132,7 @@ export const ReportsSuiteView: React.FC<ReportsSuiteViewProps> = ({ initialTab =
         prescriptionNo: `PR-${String(idx + 1).padStart(5, '0')}`,
         invoiceNo: inv.invoiceNumber,
         patientName: inv.prescription.patientName,
-        doctor: inv.prescription.doctorName || 'Dr. Suresh, MBBS',
+        doctor: inv.prescription.doctorName || '',
         items: inv.items,
         total: inv.grandTotal,
       }))

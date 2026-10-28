@@ -66,15 +66,15 @@ export const PrescriptionRegisterView: React.FC = () => {
 
           const address = inv.prescription.notes?.includes('Address:')
             ? inv.prescription.notes.replace('Address:', '').trim()
-            : 'Chennai, Tamil Nadu';
+            : '';
 
           list.push({
             serialNo: count++,
             billNo: inv.invoiceNumber,
             billDate: new Date(inv.invoiceDate).toLocaleDateString('en-IN'),
-            prescriberName: inv.prescription.doctorName || 'Dr. A. Swaminathan, MD',
-            prescriberRegNo: inv.prescription.doctorRegNumber || 'TNMC-84920',
-            patientNameAndAddress: `${inv.prescription.patientName}, ${address}`,
+            prescriberName: inv.prescription.doctorName || '',
+            prescriberRegNo: inv.prescription.doctorRegNumber || '',
+            patientNameAndAddress: address ? `${inv.prescription.patientName}, ${address}` : inv.prescription.patientName,
             patientPhone: inv.prescription.patientContact || 'N/A',
             drugPrescribed: `${item.product.name} (${item.product.genericComposition})`,
             quantity: `${item.quantity} ${item.unitType}`,

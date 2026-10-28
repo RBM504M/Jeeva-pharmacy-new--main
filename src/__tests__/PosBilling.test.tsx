@@ -13,11 +13,12 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { PharmacyProvider } from '../context/PharmacyContext';
 import { PosBillingView } from '../components/pos/PosBillingView';
+import { testInitialData } from './fixtures/testFixtures';
 
 describe('POS Billing Engine & Hardware Integration Component', () => {
   const renderPosWithProvider = () => {
     return render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <PosBillingView />
       </PharmacyProvider>
     );

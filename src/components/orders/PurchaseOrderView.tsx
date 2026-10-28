@@ -119,10 +119,10 @@ export const PurchaseOrderView: React.FC<PurchaseOrderViewProps> = ({
   const [newPoNotes, setNewPoNotes] = useState('Standard 30-day credit delivery terms.');
   const [newPoRows, setNewPoRows] = useState([
     {
-      productName: products[0]?.name || 'Paracetamol 650mg',
+      productName: products[0]?.name || '',
       stripSize: 10,
-      orderQtyStrips: 50,
-      unitCost: 25.0,
+      orderQtyStrips: 1,
+      unitCost: 0,
       gstRate: 12,
     },
   ]);

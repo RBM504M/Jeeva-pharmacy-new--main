@@ -4,13 +4,14 @@ import { describe, test, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PharmacyProvider } from '../context/PharmacyContext';
 import { ClassicDashboardView } from '../components/dashboard/ClassicDashboardView';
+import { testInitialData } from './fixtures/testFixtures';
 
 describe('Client UI/UX System Test: Jeeva Medicals Dashboard', () => {
   const mockNavigate = vi.fn();
 
   const renderDashboard = () => {
     return render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <ClassicDashboardView onNavigateToPOS={mockNavigate} />
       </PharmacyProvider>
     );

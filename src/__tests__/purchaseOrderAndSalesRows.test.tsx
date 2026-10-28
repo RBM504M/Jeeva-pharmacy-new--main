@@ -5,6 +5,7 @@ import { PharmacyProvider } from '../context/PharmacyContext';
 import App from '../App';
 import { PosBillingView } from '../components/pos/PosBillingView';
 import { PurchaseOrderView } from '../components/orders/PurchaseOrderView';
+import { testInitialData } from './fixtures/testFixtures';
 
 describe('Purchase Order View & New Sales Empty Rows Fixes', () => {
   test('Purchase Order view renders properly without crashing or blank screen', () => {
@@ -56,7 +57,7 @@ describe('Purchase Order View & New Sales Empty Rows Fixes', () => {
 
   test('Adding an item to New Sales keeps cart items plus 1 empty input row, and allows deleting items', () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <PosBillingView />
       </PharmacyProvider>
     );
@@ -84,7 +85,7 @@ describe('Purchase Order View & New Sales Empty Rows Fixes', () => {
 
   test('Searching product name and pressing Enter selects product and adds to cart upon Enter in quantity', () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <PosBillingView />
       </PharmacyProvider>
     );
@@ -107,7 +108,7 @@ describe('Purchase Order View & New Sales Empty Rows Fixes', () => {
 
   test('Searching product code/HSN selects product directly', () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <PosBillingView />
       </PharmacyProvider>
     );

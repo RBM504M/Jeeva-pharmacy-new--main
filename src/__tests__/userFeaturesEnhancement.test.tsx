@@ -6,11 +6,12 @@ import { MastersManagementView } from '../components/masters/MastersManagementVi
 import { VendorManagement } from '../components/vendors/VendorManagement';
 import { PosBillingView } from '../components/pos/PosBillingView';
 import { BillCopiesView } from '../components/sales/BillCopiesView';
+import { testInitialData } from './fixtures/testFixtures';
 
 describe('User Requested Feature Enhancements', () => {
   test('1. Supplier Management: allows adding a new supplier and editing existing suppliers', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <VendorManagement />
       </PharmacyProvider>
     );
@@ -52,7 +53,7 @@ describe('User Requested Feature Enhancements', () => {
 
   test('2. Product Master: allows editing existing product data', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <MastersManagementView initialTab="PRODUCTS" />
       </PharmacyProvider>
     );
@@ -79,7 +80,7 @@ describe('User Requested Feature Enhancements', () => {
 
   test('3. POS Billing View: allows editing line item fields and reviewing before save/print', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <PosBillingView />
       </PharmacyProvider>
     );
@@ -113,7 +114,7 @@ describe('User Requested Feature Enhancements', () => {
 
   test('4. Bill Copies: context menu does not auto-open and provides a close button', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <BillCopiesView />
       </PharmacyProvider>
     );

@@ -19,13 +19,14 @@ import { PosBillingView } from '../components/pos/PosBillingView';
 import { MastersManagementView } from '../components/masters/MastersManagementView';
 import { VendorManagement } from '../components/vendors/VendorManagement';
 import { BillCopiesView } from '../components/sales/BillCopiesView';
+import { testInitialData } from './fixtures/testFixtures';
 
 describe('System Test Lead Engineer: End-to-End Verification Suite', () => {
 
   describe('E2E Flow 1: Point of Sale (POS) Billing & Dispensing Lifecycle', () => {
     test('executes end-to-end POS workflow: search, cart configuration, rate/discount edit, Schedule H1 check, pre-save review, and checkout', async () => {
       render(
-        <PharmacyProvider>
+        <PharmacyProvider initialData={testInitialData}>
           <PosBillingView />
         </PharmacyProvider>
       );
@@ -145,7 +146,7 @@ describe('System Test Lead Engineer: End-to-End Verification Suite', () => {
   describe('E2E Flow 3: Supplier & Inward Batch Consignment Lifecycle', () => {
     test('registers a new distributor, edits distributor details, and processes stock inwarding', async () => {
       render(
-        <PharmacyProvider>
+        <PharmacyProvider initialData={testInitialData}>
           <VendorManagement />
         </PharmacyProvider>
       );
@@ -200,7 +201,7 @@ describe('System Test Lead Engineer: End-to-End Verification Suite', () => {
   describe('E2E Flow 4: Bill Copies Optimization & Dismissible Context Menu', () => {
     test('verifies Bill Copies has no disruptive auto-popups, opens context menu on click, and dismisses cleanly via close button and backdrop', async () => {
       render(
-        <PharmacyProvider>
+        <PharmacyProvider initialData={testInitialData}>
           <BillCopiesView />
         </PharmacyProvider>
       );

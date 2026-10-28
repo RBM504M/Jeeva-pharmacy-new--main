@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { PharmacyProvider, usePharmacy } from '../context/PharmacyContext';
+import { testInitialData } from './fixtures/testFixtures';
 import { Batch, Product, Invoice, Vendor } from '../types/pharmacy';
 import { InwardPurchaseInvoice, MasterDoctor, MasterCustomer, WantedBookItem } from '../types/shopaid';
 
@@ -286,7 +287,7 @@ const TestWorkflowsComponent: React.FC = () => {
 describe('Senior Peer Review End-to-End Persistence Workflows', () => {
   it('calls saveBatch and recordStockAdjustment on manual adjustment', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <TestWorkflowsComponent />
       </PharmacyProvider>
     );
@@ -302,7 +303,7 @@ describe('Senior Peer Review End-to-End Persistence Workflows', () => {
 
   it('calls saveBatch, recordStockAdjustment, and saveVendor on vendor return', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <TestWorkflowsComponent />
       </PharmacyProvider>
     );
@@ -319,7 +320,7 @@ describe('Senior Peer Review End-to-End Persistence Workflows', () => {
 
   it('calls saveBatch, recordStockAdjustment, and saveSetting on sales return', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <TestWorkflowsComponent />
       </PharmacyProvider>
     );
@@ -341,7 +342,7 @@ describe('Senior Peer Review End-to-End Persistence Workflows', () => {
 
   it('inwards new batch and calls saveBatch and recordStockAdjustment on GRN inward invoice', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <TestWorkflowsComponent />
       </PharmacyProvider>
     );
@@ -358,7 +359,7 @@ describe('Senior Peer Review End-to-End Persistence Workflows', () => {
 
   it('persists newly added doctors, customers, vendors, and wanted book items across SQLite & storage', async () => {
     render(
-      <PharmacyProvider>
+      <PharmacyProvider initialData={testInitialData}>
         <TestWorkflowsComponent />
       </PharmacyProvider>
     );

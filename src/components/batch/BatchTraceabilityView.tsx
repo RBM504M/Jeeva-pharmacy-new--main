@@ -100,60 +100,26 @@ export const BatchTraceabilityView: React.FC<BatchTraceabilityViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Quarantine State for batches
-  const [quarantinedBatchIds, setQuarantinedBatchIds] = useState<string[]>(['b-quar-1']);
+  // Quarantine State for batches (clean initial state)
+  const [quarantinedBatchIds, setQuarantinedBatchIds] = useState<string[]>([]);
 
-  // Recalls List
-  const [recalls, setRecalls] = useState<RecallNotice[]>([
-    {
-      id: 'rec-001',
-      recallNumber: 'CDSCO-REC-2026-44',
-      batchNumber: 'NW26-102',
-      productName: 'Paracetamol 650mg (Dolo 650)',
-      manufacturer: 'Micro Labs Ltd',
-      reason: 'Dissolution profile failure reported in batch testing by State Drug Lab',
-      authority: 'CDSCO South Zone / TN Drug Control',
-      quarantinedStrips: 45,
-      status: 'ACTIVE_QUARANTINE',
-      dateIssued: '2026-10-14',
-    },
-  ]);
+  // Recalls List (clean initial state)
+  const [recalls, setRecalls] = useState<RecallNotice[]>([]);
 
-  // Damaged Stock Register
-  const [damagedLogs, setDamagedLogs] = useState<DamagedStockRecord[]>([
-    {
-      id: 'dmg-01',
-      date: '2026-10-15',
-      productName: 'Cough Syrup 100ml',
-      batchNumber: 'CS26-88',
-      damagedStrips: 4,
-      reason: 'Broken Vials',
-      costLoss: 180.0,
-      recordedBy: 'Pharmacist Assistant',
-    },
-    {
-      id: 'dmg-02',
-      date: '2026-10-18',
-      productName: 'Amoxicillin 500mg',
-      batchNumber: 'AX26-302',
-      damagedStrips: 5,
-      reason: 'Crushed Packaging',
-      costLoss: 232.5,
-      recordedBy: 'Chief Pharmacist',
-    },
-  ]);
+  // Damaged Stock Register (clean initial state)
+  const [damagedLogs, setDamagedLogs] = useState<DamagedStockRecord[]>([]);
 
   // New Recall Modal
   const [showNewRecallModal, setShowNewRecallModal] = useState<boolean>(false);
   const [newRecallBatch, setNewRecallBatch] = useState<string>(batches[0]?.batchNumber || '');
-  const [newRecallReason, setNewRecallReason] = useState<string>('State Drug Inspector alert');
-  const [newRecallAuthority, setNewRecallAuthority] = useState<string>('Tamil Nadu DCA');
-  const [newRecallQty, setNewRecallQty] = useState<number>(20);
+  const [newRecallReason, setNewRecallReason] = useState<string>('');
+  const [newRecallAuthority, setNewRecallAuthority] = useState<string>('');
+  const [newRecallQty, setNewRecallQty] = useState<number>(0);
 
   // New Damage Modal
   const [showDamageModal, setShowDamageModal] = useState<boolean>(false);
   const [damageBatch, setDamageBatch] = useState<string>(batches[0]?.batchNumber || '');
-  const [damageQty, setDamageQty] = useState<number>(2);
+  const [damageQty, setDamageQty] = useState<number>(0);
   const [damageReason, setDamageReason] = useState<'Crushed Packaging' | 'Moisture Damage' | 'Broken Vials' | 'Seal Tampered'>('Crushed Packaging');
 
   // Combined detailed batch info

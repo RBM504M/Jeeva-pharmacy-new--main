@@ -78,10 +78,10 @@ export const ScheduleRegisterView: React.FC = () => {
             patientName: inv.prescription.patientName,
             patientAddress: inv.prescription.notes?.includes('Address:')
               ? inv.prescription.notes.replace('Address:', '').trim()
-              : 'T. Nagar, Chennai - 600017',
+              : '',
             patientContact: inv.prescription.patientContact || 'Walk-in',
-            doctorName: inv.prescription.doctorName || 'Dr. A. Swaminathan, MD',
-            doctorRegNo: inv.prescription.doctorRegNumber || 'TNMC-84920',
+            doctorName: inv.prescription.doctorName || '',
+            doctorRegNo: inv.prescription.doctorRegNumber || '',
             drugName: item.product.name,
             genericComposition: item.product.genericComposition,
             schedule: sched,
