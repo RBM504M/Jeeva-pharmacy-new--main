@@ -24,6 +24,7 @@ export interface ElectronAPI {
     backupSnapshots: BackupSnapshot[];
     purchaseInvoices?: InwardPurchaseInvoice[];
     purchaseReceipts?: InwardPurchaseInvoice[];
+    salesReturns?: any[];
     settings: {
       printer_settings?: PrinterSettings;
       user_profile?: UserProfile;
@@ -37,8 +38,8 @@ export interface ElectronAPI {
   updateBatchMetadata: (batch: Partial<Batch> & { id: string }) => Promise<{ success: boolean; error?: string }>;
   receiveStock: (payload: { batchId: string; quantityChangeTablets: number; reason?: string; referenceNumber?: string; rackLocation?: string }) => Promise<{ success: boolean; error?: string; newStockTablets?: number }>;
   adjustStock: (payload: { batchId: string; adjustmentType?: string; quantityChangeTablets?: number; newStockTablets?: number; reason?: string; referenceNumber?: string; rackLocation?: string }) => Promise<{ success: boolean; error?: string; newStockTablets?: number; previousStockTablets?: number; change?: number }>;
-  createInvoice: (invoice: Invoice, auditEntries?: StockAuditLogEntry[]) => Promise<{ success: boolean; error?: string }>;
-  cancelInvoice: (data: { invoiceId: string; reason: string; rollbackEntries: StockAuditLogEntry[] }) => Promise<{ success: boolean; error?: string }>;
+  createInvoice: (invoice: Invoice, auditEntries?: StockAuditLogEntry[]) => Promise<{ success: boolean; error?: string; batches?: Batch[] }>;
+  cancelInvoice: (data: { invoiceId: string; reason: string; rollbackEntries: StockAuditLogEntry[] }) => Promise<{ success: boolean; error?: string; batches?: Batch[] }>;
   updateInvoicePaymentMethod: (data: { invoiceId: string; newPaymentMethod: string }) => Promise<{ success: boolean; error?: string }>;
   recordStockAdjustment: (logEntry: StockAuditLogEntry) => Promise<{ success: boolean; error?: string }>;
   saveVendor: (vendor: Vendor) => Promise<{ success: boolean; error?: string }>;
@@ -51,6 +52,8 @@ export interface ElectronAPI {
   cancelGrn: (data: { grnId: string; reason: string }) => Promise<{ success: boolean; error?: string }>;
   postPurchaseReturn: (params: { productId: string; batchId: string; vendorId?: string; returnTablets: number; reason: string; debitNoteNumber?: string }) => Promise<{ success: boolean; error?: string; batch?: Batch; vendor?: Vendor; auditEntry?: StockAuditLogEntry }>;
   getPurchaseReceipts: () => Promise<InwardPurchaseInvoice[]>;
+  postSalesReturn: (payload: any) => Promise<{ success: boolean; error?: string; returnRecord?: any; batches?: Batch[]; invoice?: Invoice }>;
+  getSalesReturns: () => Promise<any[]>;
   printReceipt: (options?: { silent?: boolean; deviceName?: string }) => Promise<{ success: boolean; error?: string }>;
   getAppInfo: () => Promise<{
     version: string;

@@ -149,7 +149,7 @@ interface PharmacyContextType {
       reason: string;
     }>;
     refundMode: PaymentMethod;
-  }) => { success: boolean; returnRecord?: SalesReturnRecord; error?: string };
+  }) => Promise<{ success: boolean; returnRecord?: SalesReturnRecord; error?: string }>;
   addInwardPurchaseInvoice: (newPurchase: InwardPurchaseInvoice) => Promise<{ success: boolean; error?: string; receipt?: InwardPurchaseInvoice }>;
   confirmGrn: (grnId: string) => Promise<{ success: boolean; error?: string }>;
   cancelGrn: (grnId: string, reason: string) => Promise<{ success: boolean; error?: string }>;
@@ -488,8 +488,10 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                   if (Array.isArray(data.settings?.customers)) setCustomers(data.settings.customers);
                   if (Array.isArray(data.settings?.sales_reps)) setSalesReps(data.settings.sales_reps);
                   if (Array.isArray(data.settings?.racks)) setRacks(data.settings.racks);
-                  if (Array.isArray(data.settings?.wanted_book)) setWantedBook(data.settings.wanted_book);
-                  if (Array.isArray(data.settings?.sales_returns)) setSalesReturns(data.settings.sales_returns);
+                  if (Array.isArray(data.wantedBook)) setWantedBook(data.wantedBook);
+                  else if (Array.isArray(data.settings?.wanted_book)) setWantedBook(data.settings.wanted_book);
+                  if (Array.isArray(data.salesReturns)) setSalesReturns(data.salesReturns);
+                  else if (Array.isArray(data.settings?.sales_returns)) setSalesReturns(data.settings.sales_returns);
                   if (Array.isArray(data.purchaseInvoices)) setPurchaseInvoices(data.purchaseInvoices);
                   else if (Array.isArray(data.purchaseReceipts)) setPurchaseInvoices(data.purchaseReceipts);
                   else if (Array.isArray(data.settings?.purchase_invoices)) setPurchaseInvoices(data.settings.purchase_invoices);
@@ -791,6 +793,8 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setBackupSnapshots(data.backupSnapshots || []);
           if (Array.isArray(data.purchaseInvoices)) setPurchaseInvoices(data.purchaseInvoices);
           else if (Array.isArray(data.purchaseReceipts)) setPurchaseInvoices(data.purchaseReceipts);
+          if (Array.isArray(data.salesReturns)) setSalesReturns(data.salesReturns);
+          else if (Array.isArray(data.settings?.sales_returns)) setSalesReturns(data.settings.sales_returns);
         }
         return { success: true };
       }
@@ -1792,6 +1796,17 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             error: res?.error || 'Database write failed. Invoice was not committed.',
           };
         }
+        if (Array.isArray(res?.batches)) {
+          setBatches((prevBatches) => {
+            const updated = [...prevBatches];
+            for (const b of res.batches) {
+              const idx = updated.findIndex((x) => x.id === b.id);
+              if (idx >= 0) updated[idx] = b;
+              else updated.push(b);
+            }
+            return updated;
+          });
+        }
         window.electronAPI.logDpdp(dpdpEntry).catch((err) => console.warn('Failed to log DPDP in SQLite:', err));
       } catch (err: any) {
         return {
@@ -1896,6 +1911,17 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (!res || res.success === false) {
           return { success: false, error: res?.error || 'Database cancellation failed.' };
         }
+        if (Array.isArray(res?.batches)) {
+          setBatches((prevBatches) => {
+            const updated = [...prevBatches];
+            for (const b of res.batches) {
+              const idx = updated.findIndex((x) => x.id === b.id);
+              if (idx >= 0) updated[idx] = b;
+              else updated.push(b);
+            }
+            return updated;
+          });
+        }
         window.electronAPI.logDpdp(dpdpEntry).catch((err) => console.warn('Failed to log DPDP in SQLite:', err));
       } catch (err: any) {
         return { success: false, error: err?.message || 'IPC error during invoice cancellation.' };
@@ -1935,6 +1961,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   ): Promise<{ success: boolean; error?: string }> => {
     const inv = invoices.find((i) => i.id === invoiceId);
     if (!inv) return { success: false, error: 'Invoice not found' };
+    if (inv.status === 'CANCELLED') {
+      return { success: false, error: 'Cannot modify payment method on a cancelled invoice.' };
+    }
+    const VALID_METHODS = ['CASH', 'UPI', 'CARD', 'CREDIT', 'CHEQUE', 'BANK_TRANSFER'];
+    if (!VALID_METHODS.includes(newPaymentMethod.toUpperCase())) {
+      return { success: false, error: `Invalid payment method: ${newPaymentMethod}` };
+    }
 
     const dpdpEntry: DpdpLogEntry = {
       id: `dpdp_${Date.now()}`,
@@ -1970,7 +2003,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // Process Sales Return with automatic restock & credit issuance
-  const processSalesReturn = (params: {
+  const processSalesReturn = async (params: {
     invoiceId: string;
     returnedItems: Array<{
       cartItemId: string;
@@ -1978,15 +2011,73 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       reason: string;
     }>;
     refundMode: PaymentMethod;
-  }): { success: boolean; returnRecord?: SalesReturnRecord; error?: string } => {
+  }): Promise<{ success: boolean; returnRecord?: SalesReturnRecord; error?: string }> => {
     const inv = invoices.find((i) => i.id === params.invoiceId);
     if (!inv) return { success: false, error: 'Invoice not found' };
+    if (inv.status === 'CANCELLED') {
+      return { success: false, error: 'Cannot process sales return on a cancelled invoice.' };
+    }
 
+    if (!Array.isArray(params.returnedItems) || params.returnedItems.length === 0) {
+      return { success: false, error: 'At least one returned item is required.' };
+    }
+
+    // Validate returned quantities
+    for (const ret of params.returnedItems) {
+      const item = inv.items.find((it) => it.cartItemId === ret.cartItemId || it.batch?.id === ret.cartItemId);
+      if (!item) {
+        return { success: false, error: 'Returned item not found in original invoice.' };
+      }
+      if (ret.returnQuantity <= 0) {
+        return { success: false, error: 'Return quantity must be greater than zero.' };
+      }
+      if (ret.returnQuantity > item.quantity) {
+        return { success: false, error: `Return quantity (${ret.returnQuantity}) cannot exceed billed quantity (${item.quantity}).` };
+      }
+    }
+
+    if (window.electronAPI?.postSalesReturn) {
+      try {
+        const res = await window.electronAPI.postSalesReturn({
+          invoiceId: params.invoiceId,
+          returnedItems: params.returnedItems,
+          refundMode: params.refundMode,
+          reason: params.returnedItems.map((r) => r.reason).filter(Boolean).join('; ') || 'Customer return',
+        });
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Database error processing sales return.' };
+        }
+        if (Array.isArray(res.batches)) {
+          setBatches((prevBatches) => {
+            const updated = [...prevBatches];
+            for (const b of res.batches) {
+              const idx = updated.findIndex((x) => x.id === b.id);
+              if (idx >= 0) updated[idx] = b;
+              else updated.push(b);
+            }
+            return updated;
+          });
+        }
+        if (res.returnRecord) {
+          setSalesReturns((prev) => [res.returnRecord, ...prev.filter((r) => r.id !== res.returnRecord.id)]);
+        }
+        if (res.invoice) {
+          setInvoices((prev) =>
+            prev.map((i) => (i.id === res.invoice.id ? { ...i, status: res.invoice.status } : i))
+          );
+        }
+        return { success: true, returnRecord: res.returnRecord };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error processing sales return.' };
+      }
+    }
+
+    // Fallback mode for browser / tests without Electron
     let totalRefund = 0;
     const returnItemsData: SalesReturnItem[] = [];
 
     params.returnedItems.forEach((ret) => {
-      const item = inv.items.find((it) => it.cartItemId === ret.cartItemId);
+      const item = inv.items.find((it) => it.cartItemId === ret.cartItemId || it.batch?.id === ret.cartItemId);
       if (!item || ret.returnQuantity <= 0) return;
 
       const singleUnitPrice = item.unitPrice;
@@ -2042,7 +2133,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         batchNumber: item.batch.batchNumber,
         expiryDate: item.batch.expiryDate,
         drugSchedule: item.product.drugSchedule,
-        adjustmentType: 'MANUAL_ADJUSTMENT',
+        adjustmentType: 'SALE_RETURN',
         quantityChangeTablets: tabsToReturn,
         formattedChange: `+${ret.returnQuantity} ${item.unitType}${ret.returnQuantity > 1 ? 's' : ''} (Sales Return)`,
         previousStockTablets: prevStock,
@@ -2091,9 +2182,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       window.electronAPI.saveSetting('sales_returns', updatedReturns);
     }
 
-    // Update invoice status if fully returned
+    // Check if fully returned
+    const allReturned = inv.items.every((orig) => {
+      const ret = params.returnedItems.find((r) => r.cartItemId === orig.cartItemId || r.cartItemId === orig.id);
+      return ret && ret.returnQuantity >= orig.quantity;
+    });
+
+    const newStatus = allReturned ? 'RETURNED' : 'PARTIALLY_RETURNED';
     setInvoices((prev) =>
-      prev.map((i) => (i.id === inv.id ? { ...i, status: 'RETURNED' } : i))
+      prev.map((i) => (i.id === inv.id ? { ...i, status: newStatus } : i))
     );
 
     return { success: true, returnRecord };

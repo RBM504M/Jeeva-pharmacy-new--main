@@ -68,6 +68,8 @@ const PERMISSION_MATRIX = {
   'db:cancelGrn': ['ADMIN', 'PHARMACIST'],
   'db:postPurchaseReturn': ['ADMIN', 'PHARMACIST'],
   'db:getPurchaseReceipts': ['ADMIN', 'PHARMACIST', 'CASHIER'],
+  'db:postSalesReturn': ['ADMIN', 'PHARMACIST'],
+  'db:getSalesReturns': ['ADMIN', 'PHARMACIST', 'CASHIER'],
   'db:logDpdp': ['ADMIN', 'PHARMACIST', 'CASHIER', 'PHARMACY_ASSISTANT'],
   'db:saveSetting': ['ADMIN', 'PHARMACIST'],
   'db:saveBackupSnapshot': ['ADMIN'],
@@ -312,7 +314,8 @@ function registerIpcHandlers() {
         operatorName: activeSession.user.fullName || activeSession.user.username,
         operatorRole: activeSession.user.role,
       })),
-      activeSession.pharmacy.id
+      activeSession.pharmacy.id,
+      activeSession.user
     );
   });
 
@@ -392,6 +395,16 @@ function registerIpcHandlers() {
   handleDbIpc('db:getPurchaseReceipts', async () => {
     assertPermission('db:getPurchaseReceipts');
     return db.getPurchaseReceipts(activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:postSalesReturn', async (_, payload) => {
+    assertPermission('db:postSalesReturn');
+    return db.postSalesReturn(payload, activeSession.user, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:getSalesReturns', async () => {
+    assertPermission('db:getSalesReturns');
+    return db.getAllSalesReturns(activeSession.pharmacy.id);
   });
 
   handleDbIpc('db:saveBackupSnapshot', async (_, snapshot) => {

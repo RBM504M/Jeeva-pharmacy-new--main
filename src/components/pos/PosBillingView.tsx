@@ -99,6 +99,7 @@ export const PosBillingView: React.FC = () => {
   const [completedInvoice, setCompletedInvoice] = useState<Invoice | null>(null);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [isCheckingOut, setIsCheckingOut] = useState<boolean>(false);
 
   // Additional Customer, Doctor & Review State for Pre-Save/Print Editing
   const [customerAddress, setCustomerAddress] = useState('');
@@ -628,6 +629,7 @@ export const PosBillingView: React.FC = () => {
   }, [cartItems]);
 
   const handleFinalCheckout = async (autoPrint: boolean = false) => {
+    if (isCheckingOut) return;
     if (cartItems.length === 0) {
       setCheckoutError('Please add at least one medicine to the bill.');
       return;
@@ -650,6 +652,25 @@ export const PosBillingView: React.FC = () => {
       );
       return;
     }
+
+    const hasScheduleH = cartItems.some((item) => item.product.drugSchedule === 'SCHEDULE_H');
+    if (hasScheduleH && !prescription.doctorName?.trim()) {
+      setCheckoutError(
+        'Schedule H prescription drug detected. Prescribing Doctor Name is required under Drugs & Cosmetics Rules.'
+      );
+      return;
+    }
+
+    const hasScheduleX = cartItems.some((item) => item.product.drugSchedule === 'SCHEDULE_X');
+    if (hasScheduleX && (!prescription.doctorName?.trim() || !prescription.doctorRegNumber?.trim())) {
+      setCheckoutError(
+        'Schedule X narcotic/psychotropic drug detected. Both Doctor Name and Doctor Registration Number are strictly required.'
+      );
+      return;
+    }
+
+    setIsCheckingOut(true);
+    setCheckoutError(null);
 
     const currentYear = new Date().getFullYear();
     const fy = `${currentYear}-${String(currentYear + 1).slice(-2)}`;
@@ -715,6 +736,8 @@ export const PosBillingView: React.FC = () => {
       setCheckoutError(null);
     } catch (err: any) {
       setCheckoutError(err?.message || 'Failed to complete checkout');
+    } finally {
+      setIsCheckingOut(false);
     }
   };
 
@@ -1895,6 +1918,7 @@ export const PosBillingView: React.FC = () => {
           </button>
           <button
             type="button"
+            disabled={isCheckingOut}
             onClick={() => {
               if (cartItems.length === 0) {
                 setCheckoutError('Please add at least one medicine to the bill.');
@@ -1903,13 +1927,14 @@ export const PosBillingView: React.FC = () => {
               setPreConfirmAction('PRINT');
               setShowReviewModal(true);
             }}
-            className="px-4 py-2 bg-white hover:bg-slate-50 border border-sky-400 text-[#0066cc] rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+            className="px-4 py-2 bg-white hover:bg-slate-50 border border-sky-400 text-[#0066cc] rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors disabled:opacity-50"
           >
             <Printer className="w-4 h-4" />
             <span>Print Preview (F10)</span>
           </button>
           <button
             type="button"
+            disabled={isCheckingOut}
             onClick={() => {
               if (cartItems.length === 0) {
                 setCheckoutError('Please add at least one medicine to the bill.');
@@ -1918,7 +1943,7 @@ export const PosBillingView: React.FC = () => {
               setPreConfirmAction('SAVE');
               setShowReviewModal(true);
             }}
-            className="px-5 py-2 bg-[#0084ff] hover:bg-blue-600 text-white rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+            className="px-5 py-2 bg-[#0084ff] hover:bg-blue-600 disabled:opacity-50 text-white rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>Save Bill (F6)</span>
@@ -2304,19 +2329,21 @@ export const PosBillingView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={isCheckingOut}
                   onClick={() => handleFinalCheckout(false)}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Confirm & Save Bill (F6)</span>
+                  <span>{isCheckingOut ? 'Saving Bill...' : 'Confirm & Save Bill (F6)'}</span>
                 </button>
                 <button
                   type="button"
+                  disabled={isCheckingOut}
                   onClick={() => handleFinalCheckout(true)}
-                  className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                  className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>Confirm & Print Bill (F10)</span>
+                  <span>{isCheckingOut ? 'Printing Bill...' : 'Confirm & Print Bill (F10)'}</span>
                 </button>
               </div>
             </div>

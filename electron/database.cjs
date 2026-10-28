@@ -157,6 +157,7 @@ class PharmacyDatabase {
         grandTotal REAL NOT NULL,
         paymentMethod TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'COMPLETED',
+        cancelReason TEXT,
         cashierName TEXT NOT NULL,
         taxSlabBreakdownsJson TEXT NOT NULL,
         createdAt TEXT NOT NULL
@@ -288,6 +289,47 @@ class PharmacyDatabase {
         FOREIGN KEY (receiptId) REFERENCES purchase_receipts(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS invoice_items (
+        id TEXT PRIMARY KEY,
+        invoiceId TEXT NOT NULL,
+        pharmacyId TEXT,
+        productId TEXT NOT NULL,
+        productName TEXT NOT NULL,
+        batchId TEXT NOT NULL,
+        batchNumber TEXT NOT NULL,
+        unitType TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        stripSize INTEGER NOT NULL DEFAULT 10,
+        totalTabletsSold INTEGER NOT NULL,
+        unitPrice REAL NOT NULL,
+        costPrice REAL NOT NULL DEFAULT 0,
+        mrp REAL NOT NULL DEFAULT 0,
+        gstRate REAL NOT NULL DEFAULT 12,
+        taxableAmount REAL NOT NULL DEFAULT 0,
+        cgstAmount REAL NOT NULL DEFAULT 0,
+        sgstAmount REAL NOT NULL DEFAULT 0,
+        igstAmount REAL NOT NULL DEFAULT 0,
+        totalAmount REAL NOT NULL,
+        FOREIGN KEY (invoiceId) REFERENCES invoices(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS sales_returns (
+        id TEXT PRIMARY KEY,
+        pharmacyId TEXT,
+        returnNumber TEXT UNIQUE NOT NULL,
+        invoiceId TEXT NOT NULL,
+        invoiceNumber TEXT NOT NULL,
+        customerName TEXT NOT NULL,
+        date TEXT NOT NULL,
+        itemsJson TEXT NOT NULL,
+        totalRefundAmount REAL NOT NULL,
+        refundMode TEXT NOT NULL,
+        processedBy TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        isRestocked INTEGER NOT NULL DEFAULT 1,
+        createdAt TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
       CREATE INDEX IF NOT EXISTS idx_batches_product ON batches(productId);
       CREATE INDEX IF NOT EXISTS idx_batches_expiry ON batches(expiryDate);
@@ -312,7 +354,12 @@ class PharmacyDatabase {
       'CREATE INDEX IF NOT EXISTS idx_purchase_receipts_vendor ON purchase_receipts(vendorId)',
       'CREATE INDEX IF NOT EXISTS idx_purchase_receipts_grn ON purchase_receipts(grnNumber)',
       'CREATE INDEX IF NOT EXISTS idx_purchase_receipt_items_receipt ON purchase_receipt_items(receiptId)',
-      'CREATE INDEX IF NOT EXISTS idx_purchase_receipt_items_product ON purchase_receipt_items(productId)'
+      'CREATE INDEX IF NOT EXISTS idx_purchase_receipt_items_product ON purchase_receipt_items(productId)',
+      'CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoiceId)',
+      'CREATE INDEX IF NOT EXISTS idx_invoice_items_product ON invoice_items(productId)',
+      'CREATE INDEX IF NOT EXISTS idx_invoice_items_batch ON invoice_items(batchId)',
+      'CREATE INDEX IF NOT EXISTS idx_sales_returns_pharmacy ON sales_returns(pharmacyId)',
+      'CREATE INDEX IF NOT EXISTS idx_sales_returns_invoice ON sales_returns(invoiceId)'
     ];
 
     for (const query of indexQueries) {
@@ -325,7 +372,7 @@ class PharmacyDatabase {
   }
 
   runMigrations() {
-    const tables = ['products', 'invoices', 'vendors', 'stock_audit_logs', 'dpdp_logs', 'backup_snapshots', 'users', 'purchase_receipts', 'purchase_receipt_items'];
+    const tables = ['products', 'invoices', 'vendors', 'stock_audit_logs', 'dpdp_logs', 'backup_snapshots', 'users', 'purchase_receipts', 'purchase_receipt_items', 'invoice_items', 'sales_returns'];
     for (const table of tables) {
       try {
         const cols = this.db.prepare(`PRAGMA table_info(${table})`).all();
@@ -338,6 +385,15 @@ class PharmacyDatabase {
       } catch (err) {
         console.warn(`[SQLite Migration] Column check on ${table}:`, err.message);
       }
+    }
+
+    try {
+      const invCols = this.db.prepare('PRAGMA table_info(invoices)').all();
+      if (invCols && invCols.length > 0 && !invCols.some(c => c.name === 'cancelReason')) {
+        this.db.exec('ALTER TABLE invoices ADD COLUMN cancelReason TEXT');
+      }
+    } catch (err) {
+      console.warn('[SQLite Migration] cancelReason column check:', err.message);
     }
 
     // Migrate legacy app_settings purchase_invoices into purchase_receipts if empty
@@ -392,6 +448,48 @@ class PharmacyDatabase {
       }
     } catch (err) {
       console.warn('[SQLite Migration] Legacy purchase invoices migration notice:', err.message);
+    }
+
+    // Migrate legacy app_settings sales_returns into sales_returns table if empty
+    try {
+      const returnCount = this.db.prepare('SELECT COUNT(*) as cnt FROM sales_returns').get();
+      if (returnCount && returnCount.cnt === 0) {
+        const legacySetting = this.db.prepare("SELECT valueJson FROM app_settings WHERE key = 'sales_returns'").get();
+        if (legacySetting && legacySetting.valueJson) {
+          const legacyReturns = safeJsonParse(legacySetting.valueJson, []);
+          if (Array.isArray(legacyReturns) && legacyReturns.length > 0) {
+            const insStmt = this.db.prepare(`
+              INSERT OR IGNORE INTO sales_returns (
+                id, pharmacyId, returnNumber, invoiceId, invoiceNumber, customerName,
+                date, itemsJson, totalRefundAmount, refundMode, processedBy, reason,
+                isRestocked, createdAt
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `);
+            const now = new Date().toISOString();
+            for (const r of legacyReturns) {
+              insStmt.run(
+                r.id || `sr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                r.pharmacyId || null,
+                r.returnNumber || `SR-${Date.now()}`,
+                r.invoiceId || '',
+                r.invoiceNumber || '',
+                r.customerName || 'Customer',
+                r.date || now,
+                typeof r.items === 'string' ? r.items : JSON.stringify(r.items || []),
+                Number(r.totalRefundAmount) || 0,
+                r.refundMode || 'CASH',
+                r.processedBy || 'Staff',
+                r.reason || 'Sales return',
+                r.isRestocked ? 1 : 0,
+                r.createdAt || now
+              );
+            }
+            console.log(`[SQLite Migration] Migrated ${legacyReturns.length} legacy sales returns into sales_returns table.`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[SQLite Migration] Legacy sales returns migration notice:', err.message);
     }
 
     // Upgrade migration: if existing records exist without pharmacy_accounts
@@ -547,7 +645,7 @@ class PharmacyDatabase {
       );
 
       // Backfill any unassigned existing records to this newly configured pharmacy
-      const tables = ['products', 'invoices', 'vendors', 'stock_audit_logs', 'dpdp_logs', 'backup_snapshots', 'purchase_receipts', 'purchase_receipt_items'];
+      const tables = ['products', 'invoices', 'vendors', 'stock_audit_logs', 'dpdp_logs', 'backup_snapshots', 'purchase_receipts', 'purchase_receipt_items', 'invoice_items', 'sales_returns'];
       for (const table of tables) {
         this.db.prepare(`UPDATE ${table} SET pharmacyId = ? WHERE pharmacyId IS NULL`).run(pharmacyId);
       }
@@ -790,6 +888,7 @@ class PharmacyDatabase {
     let dpdpLogsStmt = 'SELECT * FROM dpdp_logs ORDER BY timestamp DESC';
     let backupSnapshotsStmt = 'SELECT * FROM backup_snapshots ORDER BY timestamp DESC';
     let purchaseReceiptsStmt = 'SELECT * FROM purchase_receipts ORDER BY grnDate DESC, createdAt DESC';
+    let salesReturnsStmt = 'SELECT * FROM sales_returns ORDER BY date DESC, createdAt DESC';
 
     if (pharmacyId) {
       productsStmt = 'SELECT * FROM products WHERE pharmacyId = ? OR pharmacyId IS NULL';
@@ -800,6 +899,7 @@ class PharmacyDatabase {
       dpdpLogsStmt = 'SELECT * FROM dpdp_logs WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY timestamp DESC';
       backupSnapshotsStmt = 'SELECT * FROM backup_snapshots WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY timestamp DESC';
       purchaseReceiptsStmt = 'SELECT * FROM purchase_receipts WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY grnDate DESC, createdAt DESC';
+      salesReturnsStmt = 'SELECT * FROM sales_returns WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY date DESC, createdAt DESC';
     }
 
     const products = (pharmacyId ? this.db.prepare(productsStmt).all(pharmacyId) : this.db.prepare(productsStmt).all()).map(p => ({
@@ -835,6 +935,11 @@ class PharmacyDatabase {
       items: safeJsonParse(r.itemsJson, []),
     }));
 
+    const salesReturns = (pharmacyId ? this.db.prepare(salesReturnsStmt).all(pharmacyId) : this.db.prepare(salesReturnsStmt).all()).map(r => ({
+      ...r,
+      items: safeJsonParse(r.itemsJson, []),
+    }));
+
     const settingsRows = this.db.prepare('SELECT * FROM app_settings').all();
     const settings = {};
     for (const row of settingsRows) {
@@ -851,8 +956,20 @@ class PharmacyDatabase {
       backupSnapshots,
       purchaseInvoices: purchaseReceipts,
       purchaseReceipts,
+      salesReturns,
       settings,
     };
+  }
+
+  getAllSalesReturns(pharmacyId = null) {
+    let stmt = 'SELECT * FROM sales_returns ORDER BY date DESC, createdAt DESC';
+    if (pharmacyId) {
+      stmt = 'SELECT * FROM sales_returns WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY date DESC, createdAt DESC';
+    }
+    return (pharmacyId ? this.db.prepare(stmt).all(pharmacyId) : this.db.prepare(stmt).all()).map(r => ({
+      ...r,
+      items: safeJsonParse(r.itemsJson, []),
+    }));
   }
 
   saveProduct(product, pharmacyId = null) {
@@ -1126,20 +1243,134 @@ class PharmacyDatabase {
     );
   }
 
-  createInvoice(invoice, auditEntries = [], pharmacyId = null) {
+  createInvoice(invoice, auditEntries = [], pharmacyId = null, operator = {}) {
+    if (!invoice || !invoice.id || !invoice.invoiceNumber) {
+      return { success: false, error: 'Invoice ID and invoice number are required.' };
+    }
+    const cleanInvNo = String(invoice.invoiceNumber).trim();
+    if (!cleanInvNo) {
+      return { success: false, error: 'Invoice number is required.' };
+    }
+
     const targetPharmacyId = pharmacyId || invoice.pharmacyId || null;
 
-    // Verify batch ownership for all items in the invoice
-    for (const item of (invoice.items || [])) {
+    // Check duplicate invoice ID
+    const dupId = this.db.prepare('SELECT id FROM invoices WHERE id = ?').get(invoice.id);
+    if (dupId) {
+      return { success: false, error: `An invoice with ID '${invoice.id}' already exists.` };
+    }
+
+    // Check duplicate invoice number
+    let dupQuery = 'SELECT id FROM invoices WHERE LOWER(TRIM(invoiceNumber)) = LOWER(?)';
+    let dupParams = [cleanInvNo];
+    if (targetPharmacyId) {
+      dupQuery = 'SELECT id FROM invoices WHERE (pharmacyId = ? OR pharmacyId IS NULL) AND LOWER(TRIM(invoiceNumber)) = LOWER(?)';
+      dupParams = [targetPharmacyId, cleanInvNo];
+    }
+    const dup = this.db.prepare(dupQuery).get(...dupParams);
+    if (dup) {
+      return { success: false, error: `Duplicate invoice number: Invoice "${cleanInvNo}" already exists.` };
+    }
+
+    if (!Array.isArray(invoice.items) || invoice.items.length === 0) {
+      return { success: false, error: 'At least one line item is required for invoice creation.' };
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date().toISOString();
+    const requestedPerBatch = {};
+    const validatedItems = [];
+
+    for (let i = 0; i < invoice.items.length; i++) {
+      const item = invoice.items[i];
       const batchId = item.batchId || (item.batch && item.batch.id);
-      if (batchId) {
-        const b = this.getBatchWithProduct(batchId);
-        if (!b) {
-          return { success: false, error: `Batch '${batchId}' not found.` };
-        }
-        if (targetPharmacyId && b.productPharmacyId && b.productPharmacyId !== targetPharmacyId) {
-          return { success: false, error: `Batch '${batchId}' belongs to another pharmacy.` };
-        }
+      if (!batchId) {
+        return { success: false, error: `Line ${i + 1}: Batch is required.` };
+      }
+      const b = this.getBatchWithProduct(batchId);
+      if (!b) {
+        return { success: false, error: `Line ${i + 1}: Batch '${batchId}' not found.` };
+      }
+      if (targetPharmacyId && b.productPharmacyId && b.productPharmacyId !== targetPharmacyId) {
+        return { success: false, error: `Line ${i + 1}: Batch '${batchId}' belongs to another pharmacy.` };
+      }
+
+      const qty = Number(item.quantity);
+      if (isNaN(qty) || qty <= 0) {
+        return { success: false, error: `Line ${i + 1}: Quantity must be greater than zero.` };
+      }
+
+      // Check expired batch
+      if (b.expiryDate && b.expiryDate < todayStr) {
+        return {
+          success: false,
+          error: `Line ${i + 1}: Cannot dispense expired batch "${b.batchNumber}" (expired on ${b.expiryDate}).`,
+        };
+      }
+
+      const stripSize = Number(item.stripSize) || Number(b.stripSize) || 10;
+      const unitType = item.unitType || 'STRIP';
+      const tabletsSold = item.totalTabletsSold !== undefined
+        ? Number(item.totalTabletsSold)
+        : (unitType === 'STRIP' ? Math.round(qty * stripSize) : Math.round(qty));
+
+      if (tabletsSold <= 0) {
+        return { success: false, error: `Line ${i + 1}: Dispensed tablet count must be greater than zero.` };
+      }
+
+      // Check price against MRP
+      const unitPrice = Number(item.unitPrice) || 0;
+      const mrpPerUnit = unitType === 'TABLET' ? (b.mrpPerStrip / stripSize) : b.mrpPerStrip;
+      if (unitPrice > mrpPerUnit + 0.05) {
+        return {
+          success: false,
+          error: `Line ${i + 1}: Selling price (₹${unitPrice.toFixed(2)}) cannot exceed MRP (₹${mrpPerUnit.toFixed(2)}).`,
+        };
+      }
+
+      if (!requestedPerBatch[batchId]) {
+        requestedPerBatch[batchId] = {
+          batch: b,
+          totalTabsRequested: 0,
+        };
+      }
+      requestedPerBatch[batchId].totalTabsRequested += tabletsSold;
+
+      const taxable = Number(item.taxableAmount) || 0;
+      const cgst = Number(item.cgstAmount) || 0;
+      const sgst = Number(item.sgstAmount) || 0;
+      const igst = Number(item.igstAmount) || 0;
+      const totalAmount = Number(item.totalAmount) || Number((taxable + cgst + sgst + igst).toFixed(2));
+
+      validatedItems.push({
+        ...item,
+        productId: b.productId,
+        productName: b.productName,
+        batchId: b.id,
+        batchNumber: b.batchNumber,
+        unitType,
+        quantity: qty,
+        stripSize,
+        totalTabletsSold: tabletsSold,
+        unitPrice,
+        costPrice: Number(((b.costPricePerStrip / stripSize) * (unitType === 'STRIP' ? stripSize : 1)).toFixed(2)),
+        mrp: Number(mrpPerUnit.toFixed(2)),
+        gstRate: Number(item.gstRate) || b.gstRate || 12,
+        taxableAmount: taxable,
+        cgstAmount: cgst,
+        sgstAmount: sgst,
+        igstAmount: igst,
+        totalAmount,
+      });
+    }
+
+    // Enforce stock availability
+    for (const [batchId, req] of Object.entries(requestedPerBatch)) {
+      if (req.batch.totalTablets < req.totalTabsRequested) {
+        return {
+          success: false,
+          error: `Insufficient stock for batch "${req.batch.batchNumber}" (${req.batch.productName}): available ${req.batch.totalTablets} tablets, requested ${req.totalTabsRequested} tablets.`,
+        };
       }
     }
 
@@ -1155,11 +1386,11 @@ class PharmacyDatabase {
       invStmt.run(
         invoice.id,
         targetPharmacyId,
-        invoice.invoiceNumber,
-        invoice.invoiceDate,
+        cleanInvNo,
+        invoice.invoiceDate || now.split('T')[0],
         invoice.isInterState ? 1 : 0,
         typeof invoice.prescription === 'string' ? invoice.prescription : JSON.stringify(invoice.prescription || {}),
-        typeof invoice.items === 'string' ? invoice.items : JSON.stringify(invoice.items || []),
+        JSON.stringify(validatedItems),
         invoice.subtotal || 0,
         invoice.totalCgst || 0,
         invoice.totalSgst || 0,
@@ -1167,44 +1398,75 @@ class PharmacyDatabase {
         invoice.totalTax || 0,
         invoice.roundOff || 0,
         invoice.grandTotal || 0,
-        invoice.paymentMethod || 'CASH',
-        invoice.status || 'PAID',
-        invoice.cashierName || 'Staff',
+        (invoice.paymentMethod || 'CASH').toUpperCase(),
+        invoice.status || 'COMPLETED',
+        operator.fullName || operator.username || invoice.cashierName || 'Staff',
         typeof invoice.taxSlabBreakdowns === 'string' ? invoice.taxSlabBreakdowns : JSON.stringify(invoice.taxSlabBreakdowns || []),
-        invoice.createdAt || invoice.invoiceDate || new Date().toISOString()
+        invoice.createdAt || now
       );
 
-      const updateBatchStmt = this.db.prepare(`
-        UPDATE batches SET totalTablets = MAX(0, totalTablets - ?), updatedAt = ? WHERE id = ?
+      // Normalized invoice_items
+      const itemStmt = this.db.prepare(`
+        INSERT INTO invoice_items (
+          id, invoiceId, pharmacyId, productId, productName, batchId, batchNumber,
+          unitType, quantity, stripSize, totalTabletsSold, unitPrice, costPrice,
+          mrp, gstRate, taxableAmount, cgstAmount, sgstAmount, igstAmount, totalAmount
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      const now = new Date().toISOString();
-      for (const item of (invoice.items || [])) {
-        const batchId = item.batchId || (item.batch && item.batch.id);
-        const tabletsSold =
-          item.totalTabletsSold !== undefined
-            ? item.totalTabletsSold
-            : item.unitType === 'STRIP'
-            ? item.quantity * (item.stripSize || 10)
-            : item.quantity;
-        if (batchId) {
-          updateBatchStmt.run(tabletsSold || 0, now, batchId);
-        }
+      for (const it of validatedItems) {
+        itemStmt.run(
+          it.id || `invitem_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+          invoice.id,
+          targetPharmacyId,
+          it.productId,
+          it.productName,
+          it.batchId,
+          it.batchNumber,
+          it.unitType,
+          it.quantity,
+          it.stripSize,
+          it.totalTabletsSold,
+          it.unitPrice,
+          it.costPrice,
+          it.mrp,
+          it.gstRate,
+          it.taxableAmount,
+          it.cgstAmount,
+          it.sgstAmount,
+          it.igstAmount,
+          it.totalAmount
+        );
       }
 
+      // Update batches stock
+      const updatedBatches = [];
+      const updateBatchStmt = this.db.prepare(
+        'UPDATE batches SET totalTablets = ?, updatedAt = ? WHERE id = ?'
+      );
+      for (const [batchId, req] of Object.entries(requestedPerBatch)) {
+        const prevStock = req.batch.totalTablets;
+        const newStock = prevStock - req.totalTabsRequested;
+        updateBatchStmt.run(newStock, now, batchId);
+        updatedBatches.push(this.db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId));
+      }
+
+      // Authoritative stock audit logs
+      const createdLogs = [];
+      const auditStmt = this.db.prepare(`
+        INSERT INTO stock_audit_logs (
+          id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
+          batchId, batchNumber, expiryDate, drugSchedule, adjustmentType, quantityChangeTablets,
+          formattedChange, previousStockTablets, newStockTablets, formattedPreviousStock,
+          formattedNewStock, referenceNumber, operatorName, operatorRole, reason, vendorId, vendorName, rackLocation
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
       if (Array.isArray(auditEntries) && auditEntries.length > 0) {
-        const auditStmt = this.db.prepare(`
-          INSERT INTO stock_audit_logs (
-            id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
-            batchId, batchNumber, expiryDate, drugSchedule, adjustmentType, quantityChangeTablets,
-            formattedChange, previousStockTablets, newStockTablets, formattedPreviousStock,
-            formattedNewStock, referenceNumber, operatorName, operatorRole, reason, vendorId, vendorName, rackLocation
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
         for (const entry of auditEntries) {
           auditStmt.run(
-            entry.id,
+            entry.id || ('aud_' + crypto.randomUUID()),
             targetPharmacyId,
-            entry.timestamp,
+            entry.timestamp || now,
             entry.formattedTimestamp || null,
             entry.productId,
             entry.productName,
@@ -1220,19 +1482,86 @@ class PharmacyDatabase {
             entry.newStockTablets || 0,
             entry.formattedPreviousStock || null,
             entry.formattedNewStock || null,
-            entry.referenceNumber || invoice.invoiceNumber,
-            entry.operatorName || invoice.cashierName || 'Staff',
-            entry.operatorRole || 'CASHIER',
-            entry.reason || `POS Bill #${invoice.invoiceNumber}`,
+            entry.referenceNumber || cleanInvNo,
+            operator.fullName || operator.username || entry.operatorName || invoice.cashierName || 'Staff',
+            operator.role || entry.operatorRole || 'CASHIER',
+            entry.reason || `POS Bill #${cleanInvNo}`,
             entry.vendorId || null,
             entry.vendorName || null,
             entry.rackLocation || null
           );
+          createdLogs.push(entry);
+        }
+      } else {
+        for (const it of validatedItems) {
+          const req = requestedPerBatch[it.batchId];
+          const prevStock = req.batch.totalTablets;
+          const newStock = prevStock - req.totalTabsRequested;
+          const stripSize = it.stripSize;
+          const prevFormatted = `${Math.floor(prevStock / stripSize)} Strips, ${prevStock % stripSize} Tabs`;
+          const newFormatted = `${Math.floor(newStock / stripSize)} Strips, ${newStock % stripSize} Tabs`;
+          const formattedChange = it.unitType === 'STRIP'
+            ? `-${it.quantity} Strip${it.quantity > 1 ? 's' : ''} (-${it.totalTabletsSold} Tabs)`
+            : `-${it.quantity} Tab${it.quantity > 1 ? 's' : ''}`;
+
+          const entry = {
+            id: `audit_sale_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+            pharmacyId: targetPharmacyId,
+            timestamp: now,
+            formattedTimestamp: new Date().toLocaleDateString('en-IN', {
+              day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            }),
+            productId: it.productId,
+            productName: it.productName,
+            genericComposition: it.genericComposition || req.batch.genericComposition || '',
+            batchId: it.batchId,
+            batchNumber: it.batchNumber,
+            expiryDate: req.batch.expiryDate,
+            drugSchedule: req.batch.drugSchedule || 'OTC',
+            adjustmentType: 'SALE_DEDUCTION',
+            quantityChangeTablets: -it.totalTabletsSold,
+            formattedChange,
+            previousStockTablets: prevStock,
+            newStockTablets: newStock,
+            formattedPreviousStock: prevFormatted,
+            formattedNewStock: newFormatted,
+            referenceNumber: cleanInvNo,
+            operatorName: operator.fullName || operator.username || invoice.cashierName || 'Staff',
+            operatorRole: operator.role || 'CASHIER',
+            reason: `POS Bill #${cleanInvNo} dispensed`,
+            vendorId: req.batch.vendorId || null,
+            vendorName: null,
+            rackLocation: req.batch.productRackLocation || null,
+          };
+          auditStmt.run(
+            entry.id, entry.pharmacyId, entry.timestamp, entry.formattedTimestamp,
+            entry.productId, entry.productName, entry.genericComposition,
+            entry.batchId, entry.batchNumber, entry.expiryDate, entry.drugSchedule,
+            entry.adjustmentType, entry.quantityChangeTablets, entry.formattedChange,
+            entry.previousStockTablets, entry.newStockTablets, entry.formattedPreviousStock,
+            entry.formattedNewStock, entry.referenceNumber, entry.operatorName,
+            entry.operatorRole, entry.reason, entry.vendorId, entry.vendorName, entry.rackLocation
+          );
+          createdLogs.push(entry);
         }
       }
 
       this.db.exec('COMMIT');
-      return { success: true };
+
+      const savedInvRow = this.db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoice.id);
+      const savedInv = {
+        ...savedInvRow,
+        prescription: safeJsonParse(savedInvRow.prescriptionJson, {}),
+        items: validatedItems,
+        taxSlabBreakdowns: safeJsonParse(savedInvRow.taxSlabBreakdownsJson, []),
+      };
+
+      return {
+        success: true,
+        invoice: savedInv,
+        batches: updatedBatches,
+        auditLogs: createdLogs,
+      };
     } catch (e) {
       this.db.exec('ROLLBACK');
       console.error('Failed to create invoice in SQLite:', e);
@@ -1258,9 +1587,18 @@ class PharmacyDatabase {
     if (inv.status === 'CANCELLED') {
       return { success: false, error: 'Invoice is already cancelled.' };
     }
+    if (inv.status === 'RETURNED') {
+      return { success: false, error: 'Cannot cancel an invoice that has already been returned.' };
+    }
     if (!reason || !reason.trim()) {
       return { success: false, error: 'Cancellation reason is required.' };
     }
+
+    const items = safeJsonParse(inv.itemsJson, []);
+    const now = new Date().toISOString();
+    const opName = operator.fullName || operator.username || 'Staff';
+    const opRole = operator.role || 'PHARMACIST';
+    const targetPharmacy = pharmacyId || inv.pharmacyId || null;
 
     this.db.exec('BEGIN TRANSACTION');
     try {
@@ -1278,49 +1616,112 @@ class PharmacyDatabase {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const now = new Date().toISOString();
-      const opName = operator.fullName || operator.username || 'Staff';
-      const opRole = operator.role || 'PHARMACIST';
-      const targetPharmacy = pharmacyId || inv.pharmacyId || null;
+      const updatedBatches = [];
 
-      for (const entry of rollbackEntries) {
-        const currentBatch = this.getBatchWithProduct(entry.batchId);
-        const prevStock = currentBatch ? currentBatch.totalTablets : (entry.previousStockTablets || 0);
-        const qty = entry.quantityChangeTablets || 0;
-        const newStock = prevStock + qty;
+      if (Array.isArray(rollbackEntries) && rollbackEntries.length > 0) {
+        for (const entry of rollbackEntries) {
+          const currentBatch = this.getBatchWithProduct(entry.batchId);
+          const prevStock = currentBatch ? currentBatch.totalTablets : (entry.previousStockTablets || 0);
+          const qty = entry.quantityChangeTablets || 0;
+          const newStock = prevStock + qty;
 
-        updateBatchStmt.run(qty, now, entry.batchId);
-        auditStmt.run(
-          entry.id || ('aud_' + crypto.randomUUID()),
-          targetPharmacy,
-          entry.timestamp || now,
-          entry.formattedTimestamp || null,
-          entry.productId,
-          entry.productName,
-          entry.genericComposition || null,
-          entry.batchId,
-          entry.batchNumber,
-          entry.expiryDate || null,
-          entry.drugSchedule || null,
-          entry.adjustmentType || 'SALE_RETURN',
-          qty,
-          entry.formattedChange || `+${qty} tablets`,
-          prevStock,
-          newStock,
-          entry.formattedPreviousStock || `${prevStock} tablets`,
-          entry.formattedNewStock || `${newStock} tablets`,
-          entry.referenceNumber || inv.invoiceNumber,
-          opName,
-          opRole,
-          reason,
-          entry.vendorId || null,
-          entry.vendorName || null,
-          entry.rackLocation || null
-        );
+          updateBatchStmt.run(qty, now, entry.batchId);
+          auditStmt.run(
+            entry.id || ('aud_' + crypto.randomUUID()),
+            targetPharmacy,
+            entry.timestamp || now,
+            entry.formattedTimestamp || null,
+            entry.productId,
+            entry.productName,
+            entry.genericComposition || null,
+            entry.batchId,
+            entry.batchNumber,
+            entry.expiryDate || null,
+            entry.drugSchedule || null,
+            entry.adjustmentType || 'SALE_CANCEL',
+            qty,
+            entry.formattedChange || `+${qty} tablets`,
+            prevStock,
+            newStock,
+            entry.formattedPreviousStock || `${prevStock} tablets`,
+            entry.formattedNewStock || `${newStock} tablets`,
+            entry.referenceNumber || inv.invoiceNumber,
+            opName,
+            opRole,
+            `Cancelled Bill #${inv.invoiceNumber}: ${reason.trim()}`,
+            entry.vendorId || null,
+            entry.vendorName || null,
+            entry.rackLocation || null
+          );
+          if (currentBatch) {
+            updatedBatches.push(this.db.prepare('SELECT * FROM batches WHERE id = ?').get(entry.batchId));
+          }
+        }
+      } else {
+        // Authoritatively reconstruct rollback from inv.itemsJson
+        for (const item of items) {
+          const batchId = item.batchId || (item.batch && item.batch.id);
+          if (batchId) {
+            const currentBatch = this.getBatchWithProduct(batchId);
+            const prevStock = currentBatch ? currentBatch.totalTablets : 0;
+            const stripSize = item.stripSize || currentBatch?.stripSize || 10;
+            const tabsSold = item.totalTabletsSold !== undefined
+              ? Number(item.totalTabletsSold)
+              : (item.unitType === 'STRIP' ? Math.round(Number(item.quantity) * stripSize) : Math.round(Number(item.quantity)));
+            const newStock = prevStock + tabsSold;
+
+            updateBatchStmt.run(tabsSold, now, batchId);
+            auditStmt.run(
+              `aud_cnl_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+              targetPharmacy,
+              now,
+              new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+              item.productId || currentBatch?.productId,
+              item.productName || currentBatch?.productName,
+              item.genericComposition || currentBatch?.genericComposition || null,
+              batchId,
+              item.batchNumber || currentBatch?.batchNumber,
+              currentBatch?.expiryDate || null,
+              currentBatch?.drugSchedule || null,
+              'SALE_CANCEL',
+              tabsSold,
+              `+${tabsSold} tablets`,
+              prevStock,
+              newStock,
+              `${prevStock} tablets`,
+              `${newStock} tablets`,
+              inv.invoiceNumber,
+              opName,
+              opRole,
+              `Cancelled Bill #${inv.invoiceNumber}: ${reason.trim()}`,
+              currentBatch?.vendorId || null,
+              null,
+              currentBatch?.productRackLocation || null
+            );
+            if (currentBatch) {
+              updatedBatches.push(this.db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId));
+            }
+          }
+        }
       }
 
+      this.db.prepare('UPDATE invoices SET status = ?, cancelReason = ? WHERE id = ?').run(
+        'CANCELLED',
+        reason.trim(),
+        invoiceId
+      );
+
       this.db.exec('COMMIT');
-      return { success: true };
+      const updatedInv = this.db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+      return {
+        success: true,
+        invoice: {
+          ...updatedInv,
+          prescription: safeJsonParse(updatedInv.prescriptionJson, {}),
+          items: safeJsonParse(updatedInv.itemsJson, []),
+        },
+        batches: updatedBatches,
+      };
     } catch (e) {
       this.db.exec('ROLLBACK');
       console.error('Failed to cancel invoice in SQLite:', e);
@@ -1339,7 +1740,10 @@ class PharmacyDatabase {
     if (pharmacyId && inv.pharmacyId && inv.pharmacyId !== pharmacyId) {
       return { success: false, error: 'Invoice belongs to another pharmacy.' };
     }
-    const validMethods = ['CASH', 'UPI', 'CARD', 'CREDIT'];
+    if (inv.status === 'CANCELLED') {
+      return { success: false, error: 'Cannot update payment method of a cancelled invoice.' };
+    }
+    const validMethods = ['CASH', 'UPI', 'CARD', 'CREDIT', 'CHEQUE', 'BANK_TRANSFER'];
     if (!validMethods.includes(newPaymentMethod.toUpperCase())) {
       return { success: false, error: `Invalid payment method: ${newPaymentMethod}` };
     }
@@ -1348,6 +1752,201 @@ class PharmacyDatabase {
       return { success: true };
     } catch (e) {
       console.error('Failed to update invoice payment method in SQLite:', e);
+      return { success: false, error: e.message };
+    }
+  }
+
+  postSalesReturn(payload, operator = {}, pharmacyId = null) {
+    if (!payload || !payload.invoiceId) {
+      return { success: false, error: 'Invoice ID is required for sales return.' };
+    }
+    const targetPharmacyId = pharmacyId || null;
+    const inv = this.db.prepare('SELECT * FROM invoices WHERE id = ?').get(payload.invoiceId);
+    if (!inv) {
+      return { success: false, error: 'Original invoice not found.' };
+    }
+    if (targetPharmacyId && inv.pharmacyId && inv.pharmacyId !== targetPharmacyId) {
+      return { success: false, error: 'Invoice belongs to another pharmacy.' };
+    }
+    if (inv.status === 'CANCELLED') {
+      return { success: false, error: 'Cannot process sales return on a cancelled invoice.' };
+    }
+
+    if (!Array.isArray(payload.returnedItems) || payload.returnedItems.length === 0) {
+      return { success: false, error: 'At least one returned item is required.' };
+    }
+
+    const originalItems = safeJsonParse(inv.itemsJson, []);
+    const prescription = safeJsonParse(inv.prescriptionJson, {});
+    const now = new Date().toISOString();
+    const returnNumber = payload.returnNumber || `SR-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    let totalRefund = 0;
+    const validatedReturns = [];
+    const updatedBatches = [];
+
+    for (let i = 0; i < payload.returnedItems.length; i++) {
+      const ret = payload.returnedItems[i];
+      const orig = originalItems.find(it => it.cartItemId === ret.cartItemId || it.batchId === ret.batchId);
+      if (!orig) {
+        return { success: false, error: `Line ${i + 1}: Item was not part of original invoice.` };
+      }
+      const retQty = Number(ret.returnQuantity);
+      if (isNaN(retQty) || retQty <= 0) {
+        return { success: false, error: `Line ${i + 1}: Return quantity must be greater than zero.` };
+      }
+      if (retQty > Number(orig.quantity)) {
+        return { success: false, error: `Line ${i + 1}: Return quantity (${retQty}) cannot exceed billed quantity (${orig.quantity}).` };
+      }
+
+      const stripSize = orig.stripSize || 10;
+      const tabsToReturn = orig.unitType === 'STRIP' ? Math.round(retQty * stripSize) : Math.round(retQty);
+      const refundForLine = Number((Number(orig.unitPrice) * retQty).toFixed(2));
+      totalRefund += refundForLine;
+
+      validatedReturns.push({
+        cartItemId: orig.cartItemId || orig.id,
+        productId: orig.productId,
+        productName: orig.productName,
+        batchId: orig.batchId,
+        batchNumber: orig.batchNumber,
+        unitType: orig.unitType,
+        quantitySold: orig.quantity,
+        returnQuantity: retQty,
+        totalTabletsReturned: tabsToReturn,
+        refundAmount: refundForLine,
+        reason: ret.reason || payload.reason || 'Customer return',
+      });
+    }
+
+    this.db.exec('BEGIN TRANSACTION');
+    try {
+      const updateBatchStmt = this.db.prepare(
+        'UPDATE batches SET totalTablets = totalTablets + ?, updatedAt = ? WHERE id = ?'
+      );
+      const auditStmt = this.db.prepare(`
+        INSERT INTO stock_audit_logs (
+          id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
+          batchId, batchNumber, expiryDate, drugSchedule, adjustmentType, quantityChangeTablets,
+          formattedChange, previousStockTablets, newStockTablets, formattedPreviousStock,
+          formattedNewStock, referenceNumber, operatorName, operatorRole, reason, vendorId, vendorName, rackLocation
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const item of validatedReturns) {
+        const batch = this.getBatchWithProduct(item.batchId);
+        const prevStock = batch ? batch.totalTablets : 0;
+        const newStock = prevStock + item.totalTabletsReturned;
+
+        updateBatchStmt.run(item.totalTabletsReturned, now, item.batchId);
+        auditStmt.run(
+          `aud_sr_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+          targetPharmacyId,
+          now,
+          new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+          item.productId,
+          item.productName,
+          batch?.genericComposition || null,
+          item.batchId,
+          item.batchNumber,
+          batch?.expiryDate || null,
+          batch?.drugSchedule || null,
+          'SALE_RETURN',
+          item.totalTabletsReturned,
+          `+${item.totalTabletsReturned} tablets (Sales Return)`,
+          prevStock,
+          newStock,
+          `${prevStock} tablets`,
+          `${newStock} tablets`,
+          returnNumber,
+          operator.fullName || operator.username || 'Staff',
+          operator.role || 'PHARMACIST',
+          `Sales Return for Bill #${inv.invoiceNumber}: ${item.reason}`,
+          batch?.vendorId || null,
+          null,
+          batch?.productRackLocation || null
+        );
+
+        if (batch) {
+          updatedBatches.push(this.db.prepare('SELECT * FROM batches WHERE id = ?').get(item.batchId));
+        }
+      }
+
+      // Record in sales_returns table
+      const srId = payload.id || `sr_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+      this.db.prepare(`
+        INSERT INTO sales_returns (
+          id, pharmacyId, returnNumber, invoiceId, invoiceNumber, customerName,
+          date, itemsJson, totalRefundAmount, refundMode, processedBy, reason,
+          isRestocked, createdAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        srId,
+        targetPharmacyId,
+        returnNumber,
+        inv.id,
+        inv.invoiceNumber,
+        prescription.patientName || 'Customer',
+        now,
+        JSON.stringify(validatedReturns),
+        Number(totalRefund.toFixed(2)),
+        payload.refundMode || 'CASH',
+        operator.fullName || operator.username || 'Staff',
+        payload.reason || 'Customer return',
+        1,
+        now
+      );
+
+      // Check if all items in invoice are fully returned
+      const allReturned = originalItems.every(orig => {
+        const ret = validatedReturns.find(r => r.cartItemId === orig.cartItemId || r.batchId === orig.batchId);
+        return ret && ret.returnQuantity >= Number(orig.quantity);
+      });
+
+      const newInvStatus = allReturned ? 'RETURNED' : 'PARTIALLY_RETURNED';
+      this.db.prepare('UPDATE invoices SET status = ? WHERE id = ?').run(newInvStatus, inv.id);
+
+      // Also sync app_settings for sales_returns backward compatibility
+      const existingSettingsRow = this.db.prepare("SELECT valueJson FROM app_settings WHERE key = 'sales_returns'").get();
+      const existingList = existingSettingsRow ? safeJsonParse(existingSettingsRow.valueJson, []) : [];
+      const returnRecord = {
+        id: srId,
+        pharmacyId: targetPharmacyId,
+        returnNumber,
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        customerName: prescription.patientName || 'Customer',
+        date: now,
+        items: validatedReturns,
+        totalRefundAmount: Number(totalRefund.toFixed(2)),
+        refundMode: payload.refundMode || 'CASH',
+        processedBy: operator.fullName || operator.username || 'Staff',
+        reason: payload.reason || 'Customer return',
+        isRestocked: true,
+        createdAt: now,
+      };
+      const updatedList = [returnRecord, ...existingList];
+      this.db.prepare(`
+        INSERT INTO app_settings (key, valueJson) VALUES ('sales_returns', ?)
+        ON CONFLICT(key) DO UPDATE SET valueJson = excluded.valueJson
+      `).run(JSON.stringify(updatedList));
+
+      this.db.exec('COMMIT');
+
+      const updatedInv = this.db.prepare('SELECT * FROM invoices WHERE id = ?').get(inv.id);
+      return {
+        success: true,
+        returnRecord,
+        batches: updatedBatches,
+        invoice: {
+          ...updatedInv,
+          prescription,
+          items: originalItems,
+        },
+      };
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      console.error('Failed to post sales return in SQLite:', e);
       return { success: false, error: e.message };
     }
   }

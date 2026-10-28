@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelGrn: (data) => ipcRenderer.invoke('db:cancelGrn', data),
   postPurchaseReturn: (params) => ipcRenderer.invoke('db:postPurchaseReturn', params),
   getPurchaseReceipts: () => ipcRenderer.invoke('db:getPurchaseReceipts'),
+  postSalesReturn: (payload) => ipcRenderer.invoke('db:postSalesReturn', payload),
+  getSalesReturns: () => ipcRenderer.invoke('db:getSalesReturns'),
 
   // Printing & Hardware
   printReceipt: (options) => ipcRenderer.invoke('print:receipt', options),
