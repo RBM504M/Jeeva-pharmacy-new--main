@@ -80,9 +80,9 @@ const TestWorkflowsComponent: React.FC = () => {
       </button>
 
       <button
-        onClick={() => {
+        onClick={async () => {
           if (batches.length > 0 && vendors.length > 0) {
-            recordVendorReturn({
+            await recordVendorReturn({
               productId: batches[0].productId,
               batchId: batches[0].id,
               vendorId: vendors[0].id,
@@ -182,7 +182,7 @@ const TestWorkflowsComponent: React.FC = () => {
       </button>
 
       <button
-        onClick={() => {
+        onClick={async () => {
           const newGRN: InwardPurchaseInvoice = {
             id: 'grn_test_1',
             grnNumber: 'GRN-2026-0099',
@@ -226,7 +226,7 @@ const TestWorkflowsComponent: React.FC = () => {
             roundOff: 0,
             grandTotal: 224,
           };
-          addInwardPurchaseInvoice(newGRN);
+          await addInwardPurchaseInvoice(newGRN);
         }}
       >
         Trigger Inward GRN

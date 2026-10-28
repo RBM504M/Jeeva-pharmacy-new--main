@@ -184,9 +184,12 @@ export const PurchaseEntryView: React.FC<PurchaseEntryViewProps> = ({
     };
   }, [gridItems]);
 
+  const [isSaving, setIsSaving] = useState(false);
+
   // Submit Inward Purchase Invoice (GRN)
-  const handleSavePurchaseEntry = (e: React.FormEvent) => {
+  const handleSavePurchaseEntry = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
 
     if (!selectedVendor) {
       alert('Please select a supplier/vendor.');
@@ -211,6 +214,10 @@ export const PurchaseEntryView: React.FC<PurchaseEntryViewProps> = ({
         alert(`Quantity must be greater than zero for ${it.productName}.`);
         return;
       }
+      if (it.mrpPerStrip < it.costPricePerStrip) {
+        alert(`MRP (₹${it.mrpPerStrip}) cannot be less than cost price (₹${it.costPricePerStrip}) for ${it.productName}.`);
+        return;
+      }
     }
 
     const newPurchaseRecord: InwardPurchaseInvoice = {
@@ -233,13 +240,23 @@ export const PurchaseEntryView: React.FC<PurchaseEntryViewProps> = ({
       grandTotal: summaryTotals.grandTotal,
       paymentStatus: 'CREDIT_PENDING',
       paymentMode: 'CREDIT_DUE',
+      status: 'POSTED_TO_STOCK',
       notes: poNotes,
       createdAt: new Date().toISOString(),
     };
 
-    addInwardPurchaseInvoice(newPurchaseRecord);
-    triggerToast(`✓ GRN #${grnNumber} saved. Inward stock credited to inventory!`);
-    setActiveTab('COPIES');
+    setIsSaving(true);
+    try {
+      const res = await addInwardPurchaseInvoice(newPurchaseRecord);
+      if (!res.success) {
+        alert(res.error || 'Failed to save purchase invoice.');
+        return;
+      }
+      triggerToast(`✓ GRN #${grnNumber} saved. Inward stock credited to inventory!`);
+      setActiveTab('COPIES');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // ==========================================
@@ -923,10 +940,13 @@ export const PurchaseEntryView: React.FC<PurchaseEntryViewProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="submit"
-                className="px-5 py-2 bg-[#10b981] hover:bg-emerald-600 text-white rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                disabled={isSaving}
+                className={`px-5 py-2 bg-[#10b981] hover:bg-emerald-600 text-white rounded-md text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors ${
+                  isSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                }`}
               >
                 <Save className="w-4 h-4" />
-                <span>Save (F5)</span>
+                <span>{isSaving ? 'Saving...' : 'Save (F5)'}</span>
               </button>
 
               <button

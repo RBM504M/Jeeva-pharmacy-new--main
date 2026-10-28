@@ -150,7 +150,9 @@ interface PharmacyContextType {
     }>;
     refundMode: PaymentMethod;
   }) => { success: boolean; returnRecord?: SalesReturnRecord; error?: string };
-  addInwardPurchaseInvoice: (newPurchase: InwardPurchaseInvoice) => void;
+  addInwardPurchaseInvoice: (newPurchase: InwardPurchaseInvoice) => Promise<{ success: boolean; error?: string; receipt?: InwardPurchaseInvoice }>;
+  confirmGrn: (grnId: string) => Promise<{ success: boolean; error?: string }>;
+  cancelGrn: (grnId: string, reason: string) => Promise<{ success: boolean; error?: string }>;
   addWantedBookItem: (item: Omit<WantedBookItem, 'id' | 'dateAdded' | 'status'>) => void;
   updateWantedBookItemStatus: (id: string, status: WantedBookItem['status']) => void;
   deleteWantedBookItem: (id: string) => void;
@@ -488,7 +490,9 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                   if (Array.isArray(data.settings?.racks)) setRacks(data.settings.racks);
                   if (Array.isArray(data.settings?.wanted_book)) setWantedBook(data.settings.wanted_book);
                   if (Array.isArray(data.settings?.sales_returns)) setSalesReturns(data.settings.sales_returns);
-                  if (Array.isArray(data.settings?.purchase_invoices)) setPurchaseInvoices(data.settings.purchase_invoices);
+                  if (Array.isArray(data.purchaseInvoices)) setPurchaseInvoices(data.purchaseInvoices);
+                  else if (Array.isArray(data.purchaseReceipts)) setPurchaseInvoices(data.purchaseReceipts);
+                  else if (Array.isArray(data.settings?.purchase_invoices)) setPurchaseInvoices(data.settings.purchase_invoices);
                   console.log('[SQLite] Loaded all offline database tables successfully.');
                 }
               }).catch((err) => {
@@ -785,6 +789,8 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setStockAuditLogs(data.stockAuditLogs || []);
           setDpdpLogs(data.dpdpLogs || []);
           setBackupSnapshots(data.backupSnapshots || []);
+          if (Array.isArray(data.purchaseInvoices)) setPurchaseInvoices(data.purchaseInvoices);
+          else if (Array.isArray(data.purchaseReceipts)) setPurchaseInvoices(data.purchaseReceipts);
         }
         return { success: true };
       }
@@ -2094,7 +2100,44 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // Add Inward Purchase GRN Invoice
-  const addInwardPurchaseInvoice = (newPurchase: InwardPurchaseInvoice) => {
+  const addInwardPurchaseInvoice = async (
+    newPurchase: InwardPurchaseInvoice
+  ): Promise<{ success: boolean; error?: string; receipt?: InwardPurchaseInvoice }> => {
+    if (window.electronAPI?.postPurchaseReceipt) {
+      try {
+        const res = await window.electronAPI.postPurchaseReceipt(newPurchase);
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Failed to record purchase receipt in database.' };
+        }
+        if (res.receipt) {
+          setPurchaseInvoices((prev) => [res.receipt as InwardPurchaseInvoice, ...prev.filter((p) => p.id !== res.receipt?.id)]);
+        }
+        if (Array.isArray(res.batches)) {
+          setBatches((prevBatches) => {
+            const updated = [...prevBatches];
+            for (const b of res.batches) {
+              const idx = updated.findIndex((x) => x.id === b.id);
+              if (idx >= 0) updated[idx] = b;
+              else updated.push(b);
+            }
+            return updated;
+          });
+        }
+        if (res.vendor) {
+          setVendors((prevVendors) =>
+            prevVendors.map((v) => (v.id === res.vendor.id ? res.vendor : v))
+          );
+        }
+        if (Array.isArray(res.auditLogs)) {
+          setStockAuditLogs((prev) => [...res.auditLogs, ...prev]);
+        }
+        return { success: true, receipt: res.receipt as InwardPurchaseInvoice };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error posting purchase receipt.' };
+      }
+    }
+
+    // In-memory / browser fallback mode
     setPurchaseInvoices((prev) => {
       const updated = [newPurchase, ...prev];
       try {
@@ -2102,13 +2145,9 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       } catch (e) {
         console.warn('LocalStorage save failed for purchases', e);
       }
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('purchase_invoices', updated);
-      }
       return updated;
     });
 
-    // Reconcile supplier balance due
     if (newPurchase.vendorId) {
       setVendors((prevVendors) =>
         prevVendors.map((v) => {
@@ -2126,11 +2165,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       );
     }
 
-    // Inward stock to batches
     newPurchase.items.forEach((item) => {
       const prod = products.find((p) => p.id === item.productId);
       const stripSize = item.packing || prod?.stripSize || 10;
-      const totalNewTabs = (item.quantityStrips + item.freeStrips) * stripSize;
+      const acceptedStrips = item.acceptedStrips !== undefined
+        ? item.acceptedStrips
+        : Math.max(0, item.quantityStrips + item.freeStrips - (item.rejectedStrips || 0));
+      const totalNewTabs = acceptedStrips * stripSize;
 
       const existingBatch = batches.find(
         (b) =>
@@ -2151,7 +2192,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             productId: item.productId,
             batchNumber: item.batchNumber,
             expiryDate: item.expiryDate,
-            manufacturingDate: new Date().toISOString().split('T')[0],
+            manufacturingDate: item.manufacturingDate || new Date().toISOString().split('T')[0],
             costPricePerStrip: item.costPricePerStrip,
             mrpPerStrip: item.mrpPerStrip,
             sellingPricePerStrip: Number((item.mrpPerStrip * 0.95).toFixed(2)),
@@ -2167,7 +2208,6 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           : [...prevBatches, batchToSave];
       });
 
-      // Audit log entry
       const auditEntry: StockAuditLogEntry = {
         id: `audit_grn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         timestamp: new Date().toISOString(),
@@ -2181,17 +2221,17 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         productId: item.productId,
         productName: item.productName,
         genericComposition: item.genericComposition,
-        batchId: `batch_${item.batchNumber}`,
+        batchId: batchToSave.id,
         batchNumber: item.batchNumber,
         expiryDate: item.expiryDate,
         drugSchedule: prod?.drugSchedule || 'OTC',
         adjustmentType: 'INWARD_PURCHASE',
         quantityChangeTablets: totalNewTabs,
-        formattedChange: `+${item.quantityStrips + item.freeStrips} Strips (+${totalNewTabs} Tabs)`,
-        previousStockTablets: 0,
-        newStockTablets: totalNewTabs,
-        formattedPreviousStock: '0 Strips, 0 Tabs',
-        formattedNewStock: `${item.quantityStrips + item.freeStrips} Strips, 0 Tabs`,
+        formattedChange: `+${acceptedStrips} Strips (+${totalNewTabs} Tabs)`,
+        previousStockTablets: existingBatch ? existingBatch.totalTablets : 0,
+        newStockTablets: existingBatch ? existingBatch.totalTablets + totalNewTabs : totalNewTabs,
+        formattedPreviousStock: existingBatch ? `${Math.floor(existingBatch.totalTablets / stripSize)} Strips` : '0 Strips, 0 Tabs',
+        formattedNewStock: `${Math.floor((existingBatch ? existingBatch.totalTablets + totalNewTabs : totalNewTabs) / stripSize)} Strips`,
         referenceNumber: newPurchase.grnNumber,
         operatorName: currentUser.name,
         operatorRole: currentUser.role,
@@ -2209,6 +2249,83 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         window.electronAPI.recordStockAdjustment(auditEntry);
       }
     });
+
+    if (window.electronAPI) {
+      window.electronAPI.saveSetting('purchase_invoices', [newPurchase, ...purchaseInvoices]);
+    }
+
+    return { success: true, receipt: newPurchase };
+  };
+
+  const confirmGrn = async (grnId: string): Promise<{ success: boolean; error?: string }> => {
+    if (window.electronAPI?.confirmGrn) {
+      try {
+        const res = await window.electronAPI.confirmGrn(grnId);
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Failed to confirm GRN.' };
+        }
+        if (res.receipt) {
+          setPurchaseInvoices((prev) =>
+            prev.map((p) => (p.id === res.receipt?.id ? (res.receipt as InwardPurchaseInvoice) : p))
+          );
+        }
+        if (Array.isArray(res.batches)) {
+          setBatches((prevBatches) => {
+            const updated = [...prevBatches];
+            for (const b of res.batches) {
+              const idx = updated.findIndex((x) => x.id === b.id);
+              if (idx >= 0) updated[idx] = b;
+              else updated.push(b);
+            }
+            return updated;
+          });
+        }
+        if (res.vendor) {
+          setVendors((prevVendors) =>
+            prevVendors.map((v) => (v.id === res.vendor.id ? res.vendor : v))
+          );
+        }
+        if (Array.isArray(res.auditLogs)) {
+          setStockAuditLogs((prev) => [...res.auditLogs, ...prev]);
+        }
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error confirming GRN.' };
+      }
+    }
+
+    setPurchaseInvoices((prev) =>
+      prev.map((p) => (p.id === grnId ? { ...p, status: 'POSTED_TO_STOCK' } : p))
+    );
+    return { success: true };
+  };
+
+  const cancelGrn = async (grnId: string, reason: string): Promise<{ success: boolean; error?: string }> => {
+    if (window.electronAPI?.cancelGrn) {
+      try {
+        const res = await window.electronAPI.cancelGrn({ grnId, reason });
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Failed to cancel GRN.' };
+        }
+        setPurchaseInvoices((prev) =>
+          prev.map((p) => (p.id === grnId ? { ...p, status: 'CANCELLED', cancelReason: reason } : p))
+        );
+        const data = await window.electronAPI.getAllData();
+        if (data) {
+          setBatches(data.batches || []);
+          setStockAuditLogs(data.stockAuditLogs || []);
+          setVendors(data.vendors || []);
+        }
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'IPC error cancelling GRN.' };
+      }
+    }
+
+    setPurchaseInvoices((prev) =>
+      prev.map((p) => (p.id === grnId ? { ...p, status: 'CANCELLED', cancelReason: reason } : p))
+    );
+    return { success: true };
   };
 
   // Wanted Book helpers
@@ -2580,22 +2697,33 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       totalTablets: newStock,
     };
 
-    if (window.electronAPI) {
+    if (window.electronAPI?.postPurchaseReturn) {
       try {
-        if (updatedVendor) {
-          const vRes = await window.electronAPI.saveVendor(updatedVendor);
-          if (!vRes || vRes.success === false) {
-            return { success: false, error: vRes?.error || 'Failed to update vendor in database.' };
-          }
+        const res = await window.electronAPI.postPurchaseReturn(params);
+        if (!res || res.success === false) {
+          return { success: false, error: res?.error || 'Failed to process vendor return.' };
         }
-        const bRes = await window.electronAPI.saveBatch(updatedBatch);
-        if (!bRes || bRes.success === false) {
-          return { success: false, error: bRes?.error || 'Failed to save batch in database.' };
+        if (res.batch) {
+          setBatches((prev) => prev.map((b) => (b.id === res.batch!.id ? res.batch! : b)));
         }
-        const aRes = await window.electronAPI.recordStockAdjustment(auditEntry);
-        if (!aRes || aRes.success === false) {
-          return { success: false, error: aRes?.error || 'Failed to record stock adjustment in database.' };
+        if (res.vendor) {
+          setVendors((prev) => prev.map((v) => (v.id === res.vendor!.id ? res.vendor! : v)));
         }
+        if (res.auditEntry) {
+          setStockAuditLogs((prev) => [res.auditEntry!, ...prev]);
+        }
+        setDpdpLogs((prev) => [
+          {
+            id: `log_${Date.now()}`,
+            timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+            patientPhoneMasked: 'N/A (VENDOR RETURN)',
+            action: 'VENDOR_RETURN_DEBIT_NOTE',
+            operatorName: `${currentUser.name} (${currentUser.role})`,
+            purpose: `Vendor return of ${params.returnTablets} tablets (Batch: ${targetBatch.batchNumber}, Ref: ${debitNote})`,
+          },
+          ...prev,
+        ]);
+        return { success: true };
       } catch (err: any) {
         return { success: false, error: err?.message || 'IPC error during vendor return.' };
       }
@@ -2626,6 +2754,18 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       },
       ...prev,
     ]);
+
+    if (window.electronAPI) {
+      try {
+        if (updatedVendor) {
+          await window.electronAPI.saveVendor(updatedVendor);
+        }
+        await window.electronAPI.saveBatch(updatedBatch);
+        await window.electronAPI.recordStockAdjustment(auditEntry);
+      } catch (err: any) {
+        console.warn('Fallback persistence failed for vendor return:', err);
+      }
+    }
 
     return { success: true };
   };
@@ -2823,6 +2963,8 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updateInvoicePaymentMethod,
         processSalesReturn,
         addInwardPurchaseInvoice,
+        confirmGrn,
+        cancelGrn,
         addWantedBookItem,
         updateWantedBookItemStatus,
         deleteWantedBookItem,

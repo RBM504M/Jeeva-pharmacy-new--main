@@ -233,6 +233,61 @@ class PharmacyDatabase {
         valueJson TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS purchase_receipts (
+        id TEXT PRIMARY KEY,
+        pharmacyId TEXT,
+        grnNumber TEXT NOT NULL,
+        grnDate TEXT NOT NULL,
+        poNumber TEXT,
+        vendorId TEXT NOT NULL,
+        vendorName TEXT NOT NULL,
+        vendorInvoiceNo TEXT NOT NULL,
+        invoiceDate TEXT NOT NULL,
+        paymentDueDate TEXT,
+        subtotal REAL NOT NULL DEFAULT 0,
+        discountTotal REAL NOT NULL DEFAULT 0,
+        taxableTotal REAL NOT NULL DEFAULT 0,
+        cgstTotal REAL NOT NULL DEFAULT 0,
+        sgstTotal REAL NOT NULL DEFAULT 0,
+        igstTotal REAL NOT NULL DEFAULT 0,
+        roundOff REAL NOT NULL DEFAULT 0,
+        grandTotal REAL NOT NULL DEFAULT 0,
+        paymentStatus TEXT NOT NULL DEFAULT 'CREDIT_PENDING',
+        paymentMode TEXT NOT NULL DEFAULT 'CREDIT_DUE',
+        status TEXT NOT NULL DEFAULT 'POSTED_TO_STOCK',
+        notes TEXT,
+        cancelReason TEXT,
+        itemsJson TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS purchase_receipt_items (
+        id TEXT PRIMARY KEY,
+        receiptId TEXT NOT NULL,
+        pharmacyId TEXT,
+        productId TEXT NOT NULL,
+        productName TEXT NOT NULL,
+        batchNumber TEXT NOT NULL,
+        expiryDate TEXT NOT NULL,
+        manufacturingDate TEXT,
+        packing INTEGER NOT NULL DEFAULT 10,
+        quantityStrips REAL NOT NULL DEFAULT 0,
+        freeStrips REAL NOT NULL DEFAULT 0,
+        rejectedStrips REAL NOT NULL DEFAULT 0,
+        acceptedStrips REAL NOT NULL DEFAULT 0,
+        costPricePerStrip REAL NOT NULL DEFAULT 0,
+        mrpPerStrip REAL NOT NULL DEFAULT 0,
+        discountPercent REAL NOT NULL DEFAULT 0,
+        gstRate REAL NOT NULL DEFAULT 0,
+        taxableAmount REAL NOT NULL DEFAULT 0,
+        cgstAmount REAL NOT NULL DEFAULT 0,
+        sgstAmount REAL NOT NULL DEFAULT 0,
+        igstAmount REAL NOT NULL DEFAULT 0,
+        lineTotal REAL NOT NULL DEFAULT 0,
+        FOREIGN KEY (receiptId) REFERENCES purchase_receipts(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
       CREATE INDEX IF NOT EXISTS idx_batches_product ON batches(productId);
       CREATE INDEX IF NOT EXISTS idx_batches_expiry ON batches(expiryDate);
@@ -252,7 +307,12 @@ class PharmacyDatabase {
       'CREATE INDEX IF NOT EXISTS idx_invoices_pharmacy ON invoices(pharmacyId)',
       'CREATE INDEX IF NOT EXISTS idx_users_pharmacy ON users(pharmacyId)',
       'CREATE INDEX IF NOT EXISTS idx_vendors_pharmacy ON vendors(pharmacyId)',
-      'CREATE INDEX IF NOT EXISTS idx_stock_audit_pharmacy ON stock_audit_logs(pharmacyId)'
+      'CREATE INDEX IF NOT EXISTS idx_stock_audit_pharmacy ON stock_audit_logs(pharmacyId)',
+      'CREATE INDEX IF NOT EXISTS idx_purchase_receipts_pharmacy ON purchase_receipts(pharmacyId)',
+      'CREATE INDEX IF NOT EXISTS idx_purchase_receipts_vendor ON purchase_receipts(vendorId)',
+      'CREATE INDEX IF NOT EXISTS idx_purchase_receipts_grn ON purchase_receipts(grnNumber)',
+      'CREATE INDEX IF NOT EXISTS idx_purchase_receipt_items_receipt ON purchase_receipt_items(receiptId)',
+      'CREATE INDEX IF NOT EXISTS idx_purchase_receipt_items_product ON purchase_receipt_items(productId)'
     ];
 
     for (const query of indexQueries) {
@@ -265,7 +325,7 @@ class PharmacyDatabase {
   }
 
   runMigrations() {
-    const tables = ['products', 'invoices', 'vendors', 'stock_audit_logs', 'dpdp_logs', 'backup_snapshots', 'users'];
+    const tables = ['products', 'invoices', 'vendors', 'stock_audit_logs', 'dpdp_logs', 'backup_snapshots', 'users', 'purchase_receipts', 'purchase_receipt_items'];
     for (const table of tables) {
       try {
         const cols = this.db.prepare(`PRAGMA table_info(${table})`).all();
@@ -278,6 +338,60 @@ class PharmacyDatabase {
       } catch (err) {
         console.warn(`[SQLite Migration] Column check on ${table}:`, err.message);
       }
+    }
+
+    // Migrate legacy app_settings purchase_invoices into purchase_receipts if empty
+    try {
+      const receiptCount = this.db.prepare('SELECT COUNT(*) as cnt FROM purchase_receipts').get();
+      if (receiptCount && receiptCount.cnt === 0) {
+        const legacySetting = this.db.prepare("SELECT valueJson FROM app_settings WHERE key = 'purchase_invoices'").get();
+        if (legacySetting && legacySetting.valueJson) {
+          const legacyPurchases = safeJsonParse(legacySetting.valueJson, []);
+          if (Array.isArray(legacyPurchases) && legacyPurchases.length > 0) {
+            const insStmt = this.db.prepare(`
+              INSERT OR IGNORE INTO purchase_receipts (
+                id, pharmacyId, grnNumber, grnDate, poNumber, vendorId, vendorName, vendorInvoiceNo,
+                invoiceDate, paymentDueDate, subtotal, discountTotal, taxableTotal, cgstTotal,
+                sgstTotal, igstTotal, roundOff, grandTotal, paymentStatus, paymentMode, status,
+                notes, itemsJson, createdAt, updatedAt
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `);
+            const now = new Date().toISOString();
+            for (const p of legacyPurchases) {
+              insStmt.run(
+                p.id || `grn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                p.pharmacyId || null,
+                p.grnNumber || 'GRN-LEGACY',
+                p.grnDate || now.split('T')[0],
+                p.poNumber || null,
+                p.vendorId || 'legacy_vendor',
+                p.vendorName || 'Supplier',
+                p.vendorInvoiceNo || 'INV-LEGACY',
+                p.invoiceDate || now.split('T')[0],
+                p.paymentDueDate || now.split('T')[0],
+                p.subtotal || 0,
+                p.discountTotal || 0,
+                p.taxableTotal || 0,
+                p.cgstTotal || 0,
+                p.sgstTotal || 0,
+                p.igstTotal || 0,
+                p.roundOff || 0,
+                p.grandTotal || 0,
+                p.paymentStatus || 'CREDIT_PENDING',
+                p.paymentMode || 'CREDIT_DUE',
+                p.status || 'POSTED_TO_STOCK',
+                p.notes || '',
+                JSON.stringify(p.items || []),
+                p.createdAt || now,
+                now
+              );
+            }
+            console.log(`[SQLite Migration] Migrated ${legacyPurchases.length} legacy purchase invoices into purchase_receipts table.`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[SQLite Migration] Legacy purchase invoices migration notice:', err.message);
     }
 
     // Upgrade migration: if existing records exist without pharmacy_accounts
@@ -433,7 +547,7 @@ class PharmacyDatabase {
       );
 
       // Backfill any unassigned existing records to this newly configured pharmacy
-      const tables = ['products', 'invoices', 'vendors', 'stock_audit_logs', 'dpdp_logs', 'backup_snapshots'];
+      const tables = ['products', 'invoices', 'vendors', 'stock_audit_logs', 'dpdp_logs', 'backup_snapshots', 'purchase_receipts', 'purchase_receipt_items'];
       for (const table of tables) {
         this.db.prepare(`UPDATE ${table} SET pharmacyId = ? WHERE pharmacyId IS NULL`).run(pharmacyId);
       }
@@ -675,6 +789,7 @@ class PharmacyDatabase {
     let stockAuditLogsStmt = 'SELECT * FROM stock_audit_logs ORDER BY timestamp DESC';
     let dpdpLogsStmt = 'SELECT * FROM dpdp_logs ORDER BY timestamp DESC';
     let backupSnapshotsStmt = 'SELECT * FROM backup_snapshots ORDER BY timestamp DESC';
+    let purchaseReceiptsStmt = 'SELECT * FROM purchase_receipts ORDER BY grnDate DESC, createdAt DESC';
 
     if (pharmacyId) {
       productsStmt = 'SELECT * FROM products WHERE pharmacyId = ? OR pharmacyId IS NULL';
@@ -684,6 +799,7 @@ class PharmacyDatabase {
       stockAuditLogsStmt = 'SELECT * FROM stock_audit_logs WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY timestamp DESC';
       dpdpLogsStmt = 'SELECT * FROM dpdp_logs WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY timestamp DESC';
       backupSnapshotsStmt = 'SELECT * FROM backup_snapshots WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY timestamp DESC';
+      purchaseReceiptsStmt = 'SELECT * FROM purchase_receipts WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY grnDate DESC, createdAt DESC';
     }
 
     const products = (pharmacyId ? this.db.prepare(productsStmt).all(pharmacyId) : this.db.prepare(productsStmt).all()).map(p => ({
@@ -714,6 +830,11 @@ class PharmacyDatabase {
       recordCounts: safeJsonParse(s.recordCountsJson, {}),
     }));
 
+    const purchaseReceipts = (pharmacyId ? this.db.prepare(purchaseReceiptsStmt).all(pharmacyId) : this.db.prepare(purchaseReceiptsStmt).all()).map(r => ({
+      ...r,
+      items: safeJsonParse(r.itemsJson, []),
+    }));
+
     const settingsRows = this.db.prepare('SELECT * FROM app_settings').all();
     const settings = {};
     for (const row of settingsRows) {
@@ -728,6 +849,8 @@ class PharmacyDatabase {
       stockAuditLogs,
       dpdpLogs,
       backupSnapshots,
+      purchaseInvoices: purchaseReceipts,
+      purchaseReceipts,
       settings,
     };
   }
@@ -1306,6 +1429,868 @@ class PharmacyDatabase {
       this.db.exec('ROLLBACK');
       console.error('Failed to record stock adjustment in SQLite:', e);
       return { success: false, error: e.message };
+    }
+  }
+
+  getPurchaseReceipts(pharmacyId = null) {
+    let stmt = 'SELECT * FROM purchase_receipts ORDER BY grnDate DESC, createdAt DESC';
+    let params = [];
+    if (pharmacyId) {
+      stmt = 'SELECT * FROM purchase_receipts WHERE pharmacyId = ? OR pharmacyId IS NULL ORDER BY grnDate DESC, createdAt DESC';
+      params = [pharmacyId];
+    }
+    const rows = this.db.prepare(stmt).all(...params);
+    return rows.map(r => ({
+      ...r,
+      items: safeJsonParse(r.itemsJson, []),
+    }));
+  }
+
+  postPurchaseReceipt(payload, operator = {}, pharmacyId = null) {
+    if (!payload) {
+      return { success: false, error: 'Purchase receipt payload is required.' };
+    }
+    const targetPharmacyId = pharmacyId || payload.pharmacyId || null;
+
+    if (!payload.vendorId) {
+      return { success: false, error: 'Vendor is required for inward purchase receipt.' };
+    }
+    const vendor = this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(payload.vendorId);
+    if (!vendor) {
+      return { success: false, error: 'Specified vendor not found.' };
+    }
+    if (targetPharmacyId && vendor.pharmacyId && vendor.pharmacyId !== targetPharmacyId) {
+      return { success: false, error: 'Vendor belongs to another pharmacy.' };
+    }
+
+    if (!payload.vendorInvoiceNo || !String(payload.vendorInvoiceNo).trim()) {
+      return { success: false, error: 'Supplier Invoice Number is required.' };
+    }
+    const cleanVendorInvoiceNo = String(payload.vendorInvoiceNo).trim();
+
+    if (!payload.grnNumber || !String(payload.grnNumber).trim()) {
+      return { success: false, error: 'GRN Number is required.' };
+    }
+    const cleanGrnNumber = String(payload.grnNumber).trim();
+
+    // Check duplicate supplier invoice
+    let dupInvQuery = "SELECT id, grnNumber FROM purchase_receipts WHERE vendorId = ? AND LOWER(TRIM(vendorInvoiceNo)) = LOWER(?) AND status != 'CANCELLED'";
+    let dupInvParams = [payload.vendorId, cleanVendorInvoiceNo];
+    if (targetPharmacyId) {
+      dupInvQuery = "SELECT id, grnNumber FROM purchase_receipts WHERE (pharmacyId = ? OR pharmacyId IS NULL) AND vendorId = ? AND LOWER(TRIM(vendorInvoiceNo)) = LOWER(?) AND status != 'CANCELLED'";
+      dupInvParams = [targetPharmacyId, payload.vendorId, cleanVendorInvoiceNo];
+    }
+    const dupInv = this.db.prepare(dupInvQuery).get(...dupInvParams);
+    if (dupInv) {
+      return {
+        success: false,
+        error: `Duplicate supplier invoice: Invoice "${cleanVendorInvoiceNo}" from this vendor has already been received under GRN #${dupInv.grnNumber}.`,
+      };
+    }
+
+    // Check duplicate GRN number
+    let dupGrnQuery = 'SELECT id FROM purchase_receipts WHERE LOWER(TRIM(grnNumber)) = LOWER(?)';
+    let dupGrnParams = [cleanGrnNumber];
+    if (targetPharmacyId) {
+      dupGrnQuery = 'SELECT id FROM purchase_receipts WHERE (pharmacyId = ? OR pharmacyId IS NULL) AND LOWER(TRIM(grnNumber)) = LOWER(?)';
+      dupGrnParams = [targetPharmacyId, cleanGrnNumber];
+    }
+    const dupGrn = this.db.prepare(dupGrnQuery).get(...dupGrnParams);
+    if (dupGrn) {
+      return {
+        success: false,
+        error: `GRN number "${cleanGrnNumber}" already exists.`,
+      };
+    }
+
+    if (!Array.isArray(payload.items) || payload.items.length === 0) {
+      return { success: false, error: 'At least one line item is required for purchase entry.' };
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const validatedItems = [];
+    const now = new Date().toISOString();
+
+    for (let i = 0; i < payload.items.length; i++) {
+      const item = payload.items[i];
+      if (!item.productId) {
+        return { success: false, error: `Line ${i + 1}: Product ID is required.` };
+      }
+      const product = this.db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId);
+      if (!product) {
+        return { success: false, error: `Line ${i + 1}: Product not found.` };
+      }
+      if (targetPharmacyId && product.pharmacyId && product.pharmacyId !== targetPharmacyId) {
+        return { success: false, error: `Line ${i + 1}: Product belongs to another pharmacy.` };
+      }
+
+      if (!item.batchNumber || !String(item.batchNumber).trim()) {
+        return { success: false, error: `Line ${i + 1}: Batch number is required.` };
+      }
+      const cleanBatchNo = String(item.batchNumber).trim();
+
+      const qty = Number(item.quantityStrips) || 0;
+      const free = Number(item.freeStrips) || 0;
+      const rej = Number(item.rejectedStrips) || 0;
+      if (qty < 0 || free < 0 || rej < 0) {
+        return { success: false, error: `Line ${i + 1}: Quantities cannot be negative.` };
+      }
+      const accepted = qty + free - rej;
+      if (accepted < 0) {
+        return { success: false, error: `Line ${i + 1}: Rejected quantity cannot exceed received plus free quantity.` };
+      }
+      if (qty === 0 && free === 0) {
+        return { success: false, error: `Line ${i + 1}: Received quantity must be greater than zero.` };
+      }
+
+      const cost = Number(item.costPricePerStrip) || 0;
+      const mrp = Number(item.mrpPerStrip) || 0;
+      if (cost < 0 || mrp < 0) {
+        return { success: false, error: `Line ${i + 1}: Pricing cannot be negative.` };
+      }
+      if (mrp < cost) {
+        return { success: false, error: `Line ${i + 1}: MRP (₹${mrp}) cannot be less than cost price (₹${cost}).` };
+      }
+
+      if (!item.expiryDate || isNaN(new Date(item.expiryDate).getTime())) {
+        return { success: false, error: `Line ${i + 1}: Valid expiry date is required.` };
+      }
+      const expDate = item.expiryDate;
+      if (expDate <= todayStr) {
+        return { success: false, error: `Line ${i + 1}: Batch "${cleanBatchNo}" is already expired (${expDate}). Expired stock cannot be received.` };
+      }
+
+      // Check existing batch for conflict
+      const existingBatch = this.db.prepare(
+        'SELECT * FROM batches WHERE productId = ? AND LOWER(TRIM(batchNumber)) = LOWER(TRIM(?))'
+      ).get(item.productId, cleanBatchNo);
+
+      if (existingBatch) {
+        if (existingBatch.vendorId && existingBatch.vendorId !== payload.vendorId) {
+          return {
+            success: false,
+            error: `Conflicting batch details: Batch "${cleanBatchNo}" already exists under a different vendor.`,
+          };
+        }
+        const existingExp = new Date(existingBatch.expiryDate).getTime();
+        const itemExp = new Date(expDate).getTime();
+        const diffDays = Math.abs((existingExp - itemExp) / (1000 * 3600 * 24));
+        if (diffDays > 30) {
+          return {
+            success: false,
+            error: `Conflicting batch details: Batch "${cleanBatchNo}" already exists with expiry date ${existingBatch.expiryDate}, which conflicts with supplied expiry ${expDate}.`,
+          };
+        }
+      }
+
+      const packing = Number(item.packing) || product.stripSize || 10;
+      const discountPercent = Number(item.discountPercent) || 0;
+      const gstRate = (item.gstRate !== undefined && item.gstRate !== null && !isNaN(Number(item.gstRate)))
+        ? Number(item.gstRate)
+        : (product.defaultGstRate !== undefined ? Number(product.defaultGstRate) : 12);
+
+      const grossCost = Number((qty * cost).toFixed(2));
+      const discountAmount = Number((grossCost * (discountPercent / 100)).toFixed(2));
+      const taxableAmount = Number((grossCost - discountAmount).toFixed(2));
+      const taxAmount = Number((taxableAmount * (gstRate / 100)).toFixed(2));
+      const halfTax = Number((taxAmount / 2).toFixed(2));
+      const lineTotal = Number((taxableAmount + taxAmount).toFixed(2));
+
+      validatedItems.push({
+        ...item,
+        productId: product.id,
+        productName: product.name,
+        genericComposition: product.genericComposition || '',
+        batchNumber: cleanBatchNo,
+        expiryDate: expDate,
+        manufacturingDate: item.manufacturingDate || todayStr,
+        packing,
+        quantityStrips: qty,
+        freeStrips: free,
+        rejectedStrips: rej,
+        acceptedStrips: accepted,
+        costPricePerStrip: cost,
+        mrpPerStrip: mrp,
+        discountPercent,
+        gstRate,
+        taxableAmount,
+        cgstAmount: halfTax,
+        sgstAmount: halfTax,
+        igstAmount: 0,
+        lineTotal,
+        hsnCode: item.hsnCode || product.hsnCode || '',
+        existingBatch,
+        product,
+      });
+    }
+
+    // Authoritative totals
+    const subtotal = Number(validatedItems.reduce((acc, it) => acc + (it.quantityStrips * it.costPricePerStrip), 0).toFixed(2));
+    const discountTotal = Number(validatedItems.reduce((acc, it) => acc + (it.quantityStrips * it.costPricePerStrip * (it.discountPercent / 100)), 0).toFixed(2));
+    const taxableTotal = Number(validatedItems.reduce((acc, it) => acc + it.taxableAmount, 0).toFixed(2));
+    const cgstTotal = Number(validatedItems.reduce((acc, it) => acc + it.cgstAmount, 0).toFixed(2));
+    const sgstTotal = Number(validatedItems.reduce((acc, it) => acc + it.sgstAmount, 0).toFixed(2));
+    const calculatedNet = taxableTotal + cgstTotal + sgstTotal;
+    const grandTotal = Number(calculatedNet.toFixed(2));
+    const roundOff = Number((grandTotal - calculatedNet).toFixed(2));
+
+    const status = payload.status || 'POSTED_TO_STOCK';
+    const paymentStatus = payload.paymentStatus || 'CREDIT_PENDING';
+    const paymentMode = payload.paymentMode || 'CREDIT_DUE';
+    const receiptId = payload.id || `grn_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+
+    this.db.exec('BEGIN TRANSACTION');
+    try {
+      const updatedBatches = [];
+      const createdLogs = [];
+
+      if (status === 'POSTED_TO_STOCK') {
+        for (const it of validatedItems) {
+          const totalTabletsToAdd = Math.round(it.acceptedStrips * it.packing);
+          let batchId;
+          let prevStock = 0;
+          let newStock = totalTabletsToAdd;
+
+          if (it.existingBatch) {
+            batchId = it.existingBatch.id;
+            prevStock = it.existingBatch.totalTablets;
+            newStock = prevStock + totalTabletsToAdd;
+
+            this.db.prepare(`
+              UPDATE batches
+              SET totalTablets = ?, costPricePerStrip = ?, mrpPerStrip = ?, expiryDate = ?, updatedAt = ?
+              WHERE id = ?
+            `).run(newStock, it.costPricePerStrip, it.mrpPerStrip, it.expiryDate, now, batchId);
+
+            updatedBatches.push(this.db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId));
+          } else {
+            batchId = `batch_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+            this.db.prepare(`
+              INSERT INTO batches (
+                id, productId, batchNumber, barcode, expiryDate, manufacturingDate,
+                costPricePerStrip, mrpPerStrip, sellingPricePerStrip, gstRate,
+                totalTablets, vendorId, createdAt, updatedAt
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              batchId,
+              it.productId,
+              it.batchNumber,
+              it.barcode || '',
+              it.expiryDate,
+              it.manufacturingDate,
+              it.costPricePerStrip,
+              it.mrpPerStrip,
+              Number((it.mrpPerStrip * 0.95).toFixed(2)),
+              it.gstRate,
+              totalTabletsToAdd,
+              payload.vendorId,
+              now,
+              now
+            );
+
+            updatedBatches.push(this.db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId));
+          }
+
+          // Stock audit log
+          const auditId = `audit_grn_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+          const stripSize = it.packing;
+          const strips = Math.floor(totalTabletsToAdd / stripSize);
+          const loose = totalTabletsToAdd % stripSize;
+          let formattedChange = `+${strips} Strips (+${totalTabletsToAdd} Tabs)`;
+          if (loose > 0) formattedChange = `+${strips} Strips, ${loose} Tabs (+${totalTabletsToAdd} Tabs)`;
+
+          const prevStrips = Math.floor(prevStock / stripSize);
+          const prevLoose = prevStock % stripSize;
+          const newStrips = Math.floor(newStock / stripSize);
+          const newLoose = newStock % stripSize;
+
+          const auditRow = {
+            id: auditId,
+            pharmacyId: targetPharmacyId,
+            timestamp: now,
+            formattedTimestamp: new Date().toLocaleDateString('en-IN', {
+              day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            }),
+            productId: it.productId,
+            productName: it.productName,
+            genericComposition: it.genericComposition,
+            batchId,
+            batchNumber: it.batchNumber,
+            expiryDate: it.expiryDate,
+            drugSchedule: it.product.drugSchedule || 'OTC',
+            adjustmentType: 'INWARD_PURCHASE',
+            quantityChangeTablets: totalTabletsToAdd,
+            formattedChange,
+            previousStockTablets: prevStock,
+            newStockTablets: newStock,
+            formattedPreviousStock: `${prevStrips} Strips, ${prevLoose} Tabs`,
+            formattedNewStock: `${newStrips} Strips, ${newLoose} Tabs`,
+            referenceNumber: cleanGrnNumber,
+            operatorName: operator.fullName || operator.name || 'Pharmacist',
+            operatorRole: operator.role || 'PHARMACIST',
+            reason: `Inward GRN #${cleanGrnNumber} from ${vendor.companyName} (Inv: ${cleanVendorInvoiceNo})`,
+            vendorId: payload.vendorId,
+            vendorName: vendor.companyName,
+            rackLocation: it.product.rackLocation || '',
+          };
+
+          this.db.prepare(`
+            INSERT INTO stock_audit_logs (
+              id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
+              batchId, batchNumber, expiryDate, drugSchedule, adjustmentType, quantityChangeTablets,
+              formattedChange, previousStockTablets, newStockTablets, formattedPreviousStock,
+              formattedNewStock, referenceNumber, operatorName, operatorRole, reason, vendorId, vendorName, rackLocation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            auditRow.id, auditRow.pharmacyId, auditRow.timestamp, auditRow.formattedTimestamp,
+            auditRow.productId, auditRow.productName, auditRow.genericComposition,
+            auditRow.batchId, auditRow.batchNumber, auditRow.expiryDate, auditRow.drugSchedule,
+            auditRow.adjustmentType, auditRow.quantityChangeTablets, auditRow.formattedChange,
+            auditRow.previousStockTablets, auditRow.newStockTablets, auditRow.formattedPreviousStock,
+            auditRow.formattedNewStock, auditRow.referenceNumber, auditRow.operatorName,
+            auditRow.operatorRole, auditRow.reason, auditRow.vendorId, auditRow.vendorName, auditRow.rackLocation
+          );
+
+          createdLogs.push(auditRow);
+        }
+
+        // Update vendor balance due if credit pending
+        if (paymentStatus === 'CREDIT_PENDING' || paymentMode === 'CREDIT_DUE') {
+          const currentBal = Number(vendor.balanceDue) || 0;
+          const newBal = Number((currentBal + grandTotal).toFixed(2));
+          this.db.prepare('UPDATE vendors SET balanceDue = ? WHERE id = ?').run(newBal, payload.vendorId);
+        }
+      }
+
+      // Save purchase_receipts header
+      const itemsToStore = validatedItems.map(it => {
+        const { existingBatch, product, ...cleanItem } = it;
+        return cleanItem;
+      });
+
+      this.db.prepare(`
+        INSERT INTO purchase_receipts (
+          id, pharmacyId, grnNumber, grnDate, poNumber, vendorId, vendorName, vendorInvoiceNo,
+          invoiceDate, paymentDueDate, subtotal, discountTotal, taxableTotal, cgstTotal,
+          sgstTotal, igstTotal, roundOff, grandTotal, paymentStatus, paymentMode, status,
+          notes, itemsJson, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        receiptId,
+        targetPharmacyId,
+        cleanGrnNumber,
+        payload.grnDate || todayStr,
+        payload.poNumber || null,
+        payload.vendorId,
+        vendor.companyName,
+        cleanVendorInvoiceNo,
+        payload.invoiceDate || todayStr,
+        payload.paymentDueDate || todayStr,
+        subtotal,
+        discountTotal,
+        taxableTotal,
+        cgstTotal,
+        sgstTotal,
+        0,
+        roundOff,
+        grandTotal,
+        paymentStatus,
+        paymentMode,
+        status,
+        payload.notes || '',
+        JSON.stringify(itemsToStore),
+        payload.createdAt || now,
+        now
+      );
+
+      // Save normalized purchase_receipt_items
+      const itemStmt = this.db.prepare(`
+        INSERT INTO purchase_receipt_items (
+          id, receiptId, pharmacyId, productId, productName, batchNumber, expiryDate,
+          manufacturingDate, packing, quantityStrips, freeStrips, rejectedStrips, acceptedStrips,
+          costPricePerStrip, mrpPerStrip, discountPercent, gstRate, taxableAmount,
+          cgstAmount, sgstAmount, igstAmount, lineTotal
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const it of itemsToStore) {
+        itemStmt.run(
+          `gritm_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+          receiptId,
+          targetPharmacyId,
+          it.productId,
+          it.productName,
+          it.batchNumber,
+          it.expiryDate,
+          it.manufacturingDate || null,
+          it.packing,
+          it.quantityStrips,
+          it.freeStrips,
+          it.rejectedStrips || 0,
+          it.acceptedStrips,
+          it.costPricePerStrip,
+          it.mrpPerStrip,
+          it.discountPercent,
+          it.gstRate,
+          it.taxableAmount,
+          it.cgstAmount,
+          it.sgstAmount,
+          it.igstAmount || 0,
+          it.lineTotal
+        );
+      }
+
+      this.db.exec('COMMIT');
+
+      const savedVendor = this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(payload.vendorId);
+      const savedReceiptRow = this.db.prepare('SELECT * FROM purchase_receipts WHERE id = ?').get(receiptId);
+      const savedReceipt = {
+        ...savedReceiptRow,
+        items: itemsToStore,
+      };
+
+      return {
+        success: true,
+        receipt: savedReceipt,
+        batches: updatedBatches,
+        vendor: savedVendor,
+        auditLogs: createdLogs,
+      };
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      console.error('[SQLite] postPurchaseReceipt failed:', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  confirmGrn(grnId, pharmacyId = null, operator = {}) {
+    if (!grnId) return { success: false, error: 'GRN ID is required.' };
+    const targetPharmacyId = pharmacyId || null;
+
+    let stmt = 'SELECT * FROM purchase_receipts WHERE id = ?';
+    let params = [grnId];
+    if (targetPharmacyId) {
+      stmt = 'SELECT * FROM purchase_receipts WHERE id = ? AND (pharmacyId = ? OR pharmacyId IS NULL)';
+      params = [grnId, targetPharmacyId];
+    }
+    const receipt = this.db.prepare(stmt).get(...params);
+    if (!receipt) {
+      return { success: false, error: 'GRN record not found.' };
+    }
+
+    // Idempotency: if already posted, return success without double-posting!
+    if (receipt.status === 'POSTED_TO_STOCK') {
+      return {
+        success: true,
+        message: 'GRN has already been confirmed and posted to stock.',
+        receipt: { ...receipt, items: safeJsonParse(receipt.itemsJson, []) },
+      };
+    }
+    if (receipt.status === 'CANCELLED') {
+      return { success: false, error: 'Cannot confirm a cancelled GRN.' };
+    }
+
+    const items = safeJsonParse(receipt.itemsJson, []);
+    const vendor = this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(receipt.vendorId);
+    const now = new Date().toISOString();
+
+    this.db.exec('BEGIN TRANSACTION');
+    try {
+      const updatedBatches = [];
+      const createdLogs = [];
+
+      for (const it of items) {
+        const prod = this.db.prepare('SELECT * FROM products WHERE id = ?').get(it.productId);
+        const stripSize = it.packing || prod?.stripSize || 10;
+        const accepted = Number(it.acceptedStrips) || (Number(it.quantityStrips) + Number(it.freeStrips) - (Number(it.rejectedStrips) || 0));
+        const totalTabletsToAdd = Math.round(accepted * stripSize);
+
+        const existingBatch = this.db.prepare(
+          'SELECT * FROM batches WHERE productId = ? AND LOWER(TRIM(batchNumber)) = LOWER(TRIM(?))'
+        ).get(it.productId, it.batchNumber.trim());
+
+        let batchId;
+        let prevStock = 0;
+        let newStock = totalTabletsToAdd;
+
+        if (existingBatch) {
+          batchId = existingBatch.id;
+          prevStock = existingBatch.totalTablets;
+          newStock = prevStock + totalTabletsToAdd;
+
+          this.db.prepare(`
+            UPDATE batches
+            SET totalTablets = ?, costPricePerStrip = ?, mrpPerStrip = ?, expiryDate = ?, updatedAt = ?
+            WHERE id = ?
+          `).run(newStock, it.costPricePerStrip, it.mrpPerStrip, it.expiryDate, now, batchId);
+
+          updatedBatches.push(this.db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId));
+        } else {
+          batchId = `batch_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+          this.db.prepare(`
+            INSERT INTO batches (
+              id, productId, batchNumber, barcode, expiryDate, manufacturingDate,
+              costPricePerStrip, mrpPerStrip, sellingPricePerStrip, gstRate,
+              totalTablets, vendorId, createdAt, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            batchId,
+            it.productId,
+            it.batchNumber,
+            it.barcode || '',
+            it.expiryDate,
+            it.manufacturingDate || now.split('T')[0],
+            it.costPricePerStrip,
+            it.mrpPerStrip,
+            Number((it.mrpPerStrip * 0.95).toFixed(2)),
+            (it.gstRate !== undefined && it.gstRate !== null && !isNaN(Number(it.gstRate))) ? Number(it.gstRate) : 12,
+            totalTabletsToAdd,
+            receipt.vendorId,
+            now,
+            now
+          );
+
+          updatedBatches.push(this.db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId));
+        }
+
+        // Audit log
+        const auditId = `audit_grn_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`;
+        const strips = Math.floor(totalTabletsToAdd / stripSize);
+        const loose = totalTabletsToAdd % stripSize;
+        let formattedChange = `+${strips} Strips (+${totalTabletsToAdd} Tabs)`;
+        if (loose > 0) formattedChange = `+${strips} Strips, ${loose} Tabs (+${totalTabletsToAdd} Tabs)`;
+
+        const prevStrips = Math.floor(prevStock / stripSize);
+        const prevLoose = prevStock % stripSize;
+        const newStrips = Math.floor(newStock / stripSize);
+        const newLoose = newStock % stripSize;
+
+        const auditRow = {
+          id: auditId,
+          pharmacyId: targetPharmacyId,
+          timestamp: now,
+          formattedTimestamp: new Date().toLocaleDateString('en-IN', {
+            day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+          }),
+          productId: it.productId,
+          productName: it.productName,
+          genericComposition: it.genericComposition || prod?.genericComposition || '',
+          batchId,
+          batchNumber: it.batchNumber,
+          expiryDate: it.expiryDate,
+          drugSchedule: prod?.drugSchedule || 'OTC',
+          adjustmentType: 'INWARD_PURCHASE',
+          quantityChangeTablets: totalTabletsToAdd,
+          formattedChange,
+          previousStockTablets: prevStock,
+          newStockTablets: newStock,
+          formattedPreviousStock: `${prevStrips} Strips, ${prevLoose} Tabs`,
+          formattedNewStock: `${newStrips} Strips, ${newLoose} Tabs`,
+          referenceNumber: receipt.grnNumber,
+          operatorName: operator.fullName || operator.name || 'Pharmacist',
+          operatorRole: operator.role || 'PHARMACIST',
+          reason: `Confirmed GRN #${receipt.grnNumber} from ${vendor?.companyName || receipt.vendorName} (Inv: ${receipt.vendorInvoiceNo})`,
+          vendorId: receipt.vendorId,
+          vendorName: vendor?.companyName || receipt.vendorName,
+          rackLocation: prod?.rackLocation || '',
+        };
+
+        this.db.prepare(`
+          INSERT INTO stock_audit_logs (
+            id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
+            batchId, batchNumber, expiryDate, drugSchedule, adjustmentType, quantityChangeTablets,
+            formattedChange, previousStockTablets, newStockTablets, formattedPreviousStock,
+            formattedNewStock, referenceNumber, operatorName, operatorRole, reason, vendorId, vendorName, rackLocation
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          auditRow.id, auditRow.pharmacyId, auditRow.timestamp, auditRow.formattedTimestamp,
+          auditRow.productId, auditRow.productName, auditRow.genericComposition,
+          auditRow.batchId, auditRow.batchNumber, auditRow.expiryDate, auditRow.drugSchedule,
+          auditRow.adjustmentType, auditRow.quantityChangeTablets, auditRow.formattedChange,
+          auditRow.previousStockTablets, auditRow.newStockTablets, auditRow.formattedPreviousStock,
+          auditRow.formattedNewStock, auditRow.referenceNumber, auditRow.operatorName,
+          auditRow.operatorRole, auditRow.reason, auditRow.vendorId, auditRow.vendorName, auditRow.rackLocation
+        );
+
+        createdLogs.push(auditRow);
+      }
+
+      // Update vendor balance due if credit pending
+      if (vendor && (receipt.paymentStatus === 'CREDIT_PENDING' || receipt.paymentMode === 'CREDIT_DUE')) {
+        const currentBal = Number(vendor.balanceDue) || 0;
+        const newBal = Number((currentBal + receipt.grandTotal).toFixed(2));
+        this.db.prepare('UPDATE vendors SET balanceDue = ? WHERE id = ?').run(newBal, receipt.vendorId);
+      }
+
+      this.db.prepare('UPDATE purchase_receipts SET status = ?, updatedAt = ? WHERE id = ?').run('POSTED_TO_STOCK', now, grnId);
+
+      this.db.exec('COMMIT');
+
+      const updatedReceipt = {
+        ...receipt,
+        status: 'POSTED_TO_STOCK',
+        updatedAt: now,
+        items,
+      };
+
+      const updatedVendor = vendor ? this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendor.id) : null;
+
+      return {
+        success: true,
+        receipt: updatedReceipt,
+        batches: updatedBatches,
+        vendor: updatedVendor,
+        auditLogs: createdLogs,
+      };
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      console.error('[SQLite] confirmGrn failed:', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  cancelGrn(grnId, reason, pharmacyId = null, operator = {}) {
+    if (!grnId) return { success: false, error: 'GRN ID is required.' };
+    if (!reason || !String(reason).trim()) {
+      return { success: false, error: 'Cancellation reason is required.' };
+    }
+    const targetPharmacyId = pharmacyId || null;
+
+    let stmt = 'SELECT * FROM purchase_receipts WHERE id = ?';
+    let params = [grnId];
+    if (targetPharmacyId) {
+      stmt = 'SELECT * FROM purchase_receipts WHERE id = ? AND (pharmacyId = ? OR pharmacyId IS NULL)';
+      params = [grnId, targetPharmacyId];
+    }
+    const receipt = this.db.prepare(stmt).get(...params);
+    if (!receipt) return { success: false, error: 'GRN not found.' };
+
+    if (receipt.status === 'CANCELLED') {
+      return { success: false, error: 'GRN is already cancelled.' };
+    }
+
+    const now = new Date().toISOString();
+    const items = safeJsonParse(receipt.itemsJson, []);
+
+    this.db.exec('BEGIN TRANSACTION');
+    try {
+      if (receipt.status === 'POSTED_TO_STOCK') {
+        // Validate that current stock hasn't already been consumed
+        for (const it of items) {
+          const accepted = Number(it.acceptedStrips) || (Number(it.quantityStrips) + Number(it.freeStrips) - (Number(it.rejectedStrips) || 0));
+          const prod = this.db.prepare('SELECT * FROM products WHERE id = ?').get(it.productId);
+          const stripSize = it.packing || prod?.stripSize || 10;
+          const tabsToDeduct = Math.round(accepted * stripSize);
+
+          const batch = this.db.prepare(
+            'SELECT * FROM batches WHERE productId = ? AND LOWER(TRIM(batchNumber)) = LOWER(TRIM(?))'
+          ).get(it.productId, it.batchNumber.trim());
+
+          if (!batch || batch.totalTablets < tabsToDeduct) {
+            this.db.exec('ROLLBACK');
+            return {
+              success: false,
+              error: `Cannot cancel GRN: Stock for batch "${it.batchNumber}" has already been dispensed/sold (available: ${batch?.totalTablets || 0}, required: ${tabsToDeduct}).`,
+            };
+          }
+        }
+
+        // Deduct stock and log audit
+        for (const it of items) {
+          const accepted = Number(it.acceptedStrips) || (Number(it.quantityStrips) + Number(it.freeStrips) - (Number(it.rejectedStrips) || 0));
+          const prod = this.db.prepare('SELECT * FROM products WHERE id = ?').get(it.productId);
+          const stripSize = it.packing || prod?.stripSize || 10;
+          const tabsToDeduct = Math.round(accepted * stripSize);
+
+          const batch = this.db.prepare(
+            'SELECT * FROM batches WHERE productId = ? AND LOWER(TRIM(batchNumber)) = LOWER(TRIM(?))'
+          ).get(it.productId, it.batchNumber.trim());
+
+          const prevStock = batch.totalTablets;
+          const newStock = prevStock - tabsToDeduct;
+
+          this.db.prepare('UPDATE batches SET totalTablets = ?, updatedAt = ? WHERE id = ?').run(newStock, now, batch.id);
+
+          this.db.prepare(`
+            INSERT INTO stock_audit_logs (
+              id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
+              batchId, batchNumber, expiryDate, drugSchedule, adjustmentType, quantityChangeTablets,
+              formattedChange, previousStockTablets, newStockTablets, formattedPreviousStock,
+              formattedNewStock, referenceNumber, operatorName, operatorRole, reason, vendorId, vendorName, rackLocation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            `audit_cnl_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+            targetPharmacyId,
+            now,
+            new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+            prod.id,
+            prod.name,
+            prod.genericComposition,
+            batch.id,
+            batch.batchNumber,
+            batch.expiryDate,
+            prod.drugSchedule || 'OTC',
+            'ADJUSTMENT_OUT',
+            -tabsToDeduct,
+            `-${tabsToDeduct} Tabs`,
+            prevStock,
+            newStock,
+            `${Math.floor(prevStock / stripSize)} Strips`,
+            `${Math.floor(newStock / stripSize)} Strips`,
+            receipt.grnNumber,
+            operator.fullName || operator.name || 'Pharmacist',
+            operator.role || 'PHARMACIST',
+            `Cancelled GRN #${receipt.grnNumber}: ${reason}`,
+            receipt.vendorId,
+            receipt.vendorName,
+            prod.rackLocation || ''
+          );
+        }
+
+        // Reverse vendor balance if it was credit pending
+        if (receipt.paymentStatus === 'CREDIT_PENDING' || receipt.paymentMode === 'CREDIT_DUE') {
+          const vendor = this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(receipt.vendorId);
+          if (vendor) {
+            const currentBal = Number(vendor.balanceDue) || 0;
+            const newBal = Math.max(0, Number((currentBal - receipt.grandTotal).toFixed(2)));
+            this.db.prepare('UPDATE vendors SET balanceDue = ? WHERE id = ?').run(newBal, receipt.vendorId);
+          }
+        }
+      }
+
+      this.db.prepare('UPDATE purchase_receipts SET status = ?, cancelReason = ?, updatedAt = ? WHERE id = ?')
+        .run('CANCELLED', reason.trim(), now, grnId);
+
+      this.db.exec('COMMIT');
+      return { success: true };
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      console.error('[SQLite] cancelGrn failed:', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  postPurchaseReturn(params, operator = {}, pharmacyId = null) {
+    if (!params) return { success: false, error: 'Return params required.' };
+    const { productId, batchId, vendorId, returnTablets, reason, debitNoteNumber } = params;
+
+    if (!productId || !batchId) {
+      return { success: false, error: 'Product and Batch IDs are required.' };
+    }
+    const targetPharmacyId = pharmacyId || null;
+
+    const prod = this.db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+    if (!prod) return { success: false, error: 'Product not found.' };
+    if (targetPharmacyId && prod.pharmacyId && prod.pharmacyId !== targetPharmacyId) {
+      return { success: false, error: 'Product belongs to another pharmacy.' };
+    }
+
+    const batch = this.db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId);
+    if (!batch) return { success: false, error: 'Batch not found.' };
+
+    const returnQty = Number(returnTablets);
+    if (isNaN(returnQty) || returnQty <= 0) {
+      return { success: false, error: 'Return quantity must be greater than zero.' };
+    }
+    if (batch.totalTablets < returnQty) {
+      return {
+        success: false,
+        error: `Cannot return ${returnQty} tablets. Available batch stock is ${batch.totalTablets} tablets.`,
+      };
+    }
+
+    const vendor = vendorId ? this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendorId) : null;
+    const now = new Date().toISOString();
+    const prevStock = batch.totalTablets;
+    const newStock = prevStock - returnQty;
+    const dnNo = debitNoteNumber || `DN-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
+
+    this.db.exec('BEGIN TRANSACTION');
+    try {
+      this.db.prepare('UPDATE batches SET totalTablets = ?, updatedAt = ? WHERE id = ?').run(newStock, now, batchId);
+
+      let updatedVendor = null;
+      if (vendor) {
+        const stripSize = prod.stripSize || 10;
+        const costPerTab = batch.costPricePerStrip / stripSize;
+        const creditAmount = Number((costPerTab * returnQty).toFixed(2));
+        const currentBal = Number(vendor.balanceDue) || 0;
+        const newBal = Math.max(0, Number((currentBal - creditAmount).toFixed(2)));
+        this.db.prepare('UPDATE vendors SET balanceDue = ? WHERE id = ?').run(newBal, vendor.id);
+        updatedVendor = this.db.prepare('SELECT * FROM vendors WHERE id = ?').get(vendor.id);
+      }
+
+      const stripSize = prod.stripSize || 10;
+      const strips = Math.floor(returnQty / stripSize);
+      const loose = returnQty % stripSize;
+      let formattedChange = `-${strips} Strips (-${returnQty} Tabs)`;
+      if (loose > 0) formattedChange = `-${strips} Strips, ${loose} Tabs (-${returnQty} Tabs)`;
+
+      const prevStrips = Math.floor(prevStock / stripSize);
+      const prevLoose = prevStock % stripSize;
+      const newStrips = Math.floor(newStock / stripSize);
+      const newLoose = newStock % stripSize;
+
+      const auditRow = {
+        id: `audit_dn_${Date.now()}_${crypto.randomUUID().substring(0, 6)}`,
+        pharmacyId: targetPharmacyId,
+        timestamp: now,
+        formattedTimestamp: new Date().toLocaleDateString('en-IN', {
+          day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        }),
+        productId: prod.id,
+        productName: prod.name,
+        genericComposition: prod.genericComposition,
+        batchId: batch.id,
+        batchNumber: batch.batchNumber,
+        expiryDate: batch.expiryDate,
+        drugSchedule: prod.drugSchedule || 'OTC',
+        adjustmentType: 'VENDOR_RETURN',
+        quantityChangeTablets: -returnQty,
+        formattedChange,
+        previousStockTablets: prevStock,
+        newStockTablets: newStock,
+        formattedPreviousStock: `${prevStrips} Strips, ${prevLoose} Tabs`,
+        formattedNewStock: `${newStrips} Strips, ${newLoose} Tabs`,
+        referenceNumber: dnNo,
+        operatorName: operator.fullName || operator.name || 'Pharmacist',
+        operatorRole: operator.role || 'PHARMACIST',
+        reason: reason || 'Vendor Return / Debit Note',
+        vendorId: vendor?.id || batch.vendorId,
+        vendorName: vendor?.companyName || 'Distributor',
+        rackLocation: prod.rackLocation || '',
+      };
+
+      this.db.prepare(`
+        INSERT INTO stock_audit_logs (
+          id, pharmacyId, timestamp, formattedTimestamp, productId, productName, genericComposition,
+          batchId, batchNumber, expiryDate, drugSchedule, adjustmentType, quantityChangeTablets,
+          formattedChange, previousStockTablets, newStockTablets, formattedPreviousStock,
+          formattedNewStock, referenceNumber, operatorName, operatorRole, reason, vendorId, vendorName, rackLocation
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        auditRow.id, auditRow.pharmacyId, auditRow.timestamp, auditRow.formattedTimestamp,
+        auditRow.productId, auditRow.productName, auditRow.genericComposition,
+        auditRow.batchId, auditRow.batchNumber, auditRow.expiryDate, auditRow.drugSchedule,
+        auditRow.adjustmentType, auditRow.quantityChangeTablets, auditRow.formattedChange,
+        auditRow.previousStockTablets, auditRow.newStockTablets, auditRow.formattedPreviousStock,
+        auditRow.formattedNewStock, auditRow.referenceNumber, auditRow.operatorName,
+        auditRow.operatorRole, auditRow.reason, auditRow.vendorId, auditRow.vendorName, auditRow.rackLocation
+      );
+
+      this.db.exec('COMMIT');
+
+      const updatedBatch = this.db.prepare('SELECT * FROM batches WHERE id = ?').get(batchId);
+      return {
+        success: true,
+        batch: updatedBatch,
+        vendor: updatedVendor,
+        auditEntry: auditRow,
+      };
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      console.error('[SQLite] postPurchaseReturn failed:', err);
+      return { success: false, error: err.message };
     }
   }
 

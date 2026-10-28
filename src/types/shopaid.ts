@@ -83,28 +83,34 @@ export interface WantedBookItem {
 export interface InwardPurchaseItem {
   productId: string;
   productName: string;
-  genericComposition: string;
+  genericComposition?: string;
   packing: number;               // Strip size
   quantityStrips: number;
   freeStrips: number;
+  rejectedStrips?: number;
+  acceptedStrips?: number;
   batchNumber: string;
   expiryDate: string;
+  manufacturingDate?: string;
   costPricePerStrip: number;
   mrpPerStrip: number;
   discountPercent: number;
-  hsnCode: string;
+  hsnCode?: string;
   gstRate: GSTRate;
   taxableAmount: number;
   cgstAmount: number;
   sgstAmount: number;
   igstAmount: number;
   lineTotal: number;
+  barcode?: string;
 }
 
 export interface InwardPurchaseInvoice {
   id: string;
+  pharmacyId?: string;
   grnNumber: string;             // e.g. "GRN-2026-081"
   grnDate: string;
+  poNumber?: string;
   vendorId: string;
   vendorName: string;
   vendorInvoiceNo: string;
@@ -121,8 +127,11 @@ export interface InwardPurchaseInvoice {
   grandTotal: number;
   paymentStatus: 'PAID' | 'CREDIT_PENDING';
   paymentMode: PaymentMethod;
+  status?: 'POSTED_TO_STOCK' | 'PENDING_CONFIRMATION' | 'PARTIALLY_RECEIVED' | 'CANCELLED';
   notes?: string;
+  cancelReason?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface SalesReturnItem {

@@ -39,6 +39,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSetting: (key, val) => ipcRenderer.invoke('db:saveSetting', { key, val }),
   saveBackupSnapshot: (snapshot) => ipcRenderer.invoke('db:saveBackupSnapshot', snapshot),
   restoreBackup: (backupData) => ipcRenderer.invoke('db:restoreBackup', backupData),
+  postPurchaseReceipt: (receipt) => ipcRenderer.invoke('db:postPurchaseReceipt', receipt),
+  confirmGrn: (grnId) => ipcRenderer.invoke('db:confirmGrn', grnId),
+  cancelGrn: (data) => ipcRenderer.invoke('db:cancelGrn', data),
+  postPurchaseReturn: (params) => ipcRenderer.invoke('db:postPurchaseReturn', params),
+  getPurchaseReceipts: () => ipcRenderer.invoke('db:getPurchaseReceipts'),
 
   // Printing & Hardware
   printReceipt: (options) => ipcRenderer.invoke('print:receipt', options),

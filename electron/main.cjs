@@ -63,6 +63,11 @@ const PERMISSION_MATRIX = {
   'db:cancelInvoice': ['ADMIN', 'PHARMACIST'],
   'db:updateInvoicePaymentMethod': ['ADMIN'],
   'db:saveVendor': ['ADMIN', 'PHARMACIST'],
+  'db:postPurchaseReceipt': ['ADMIN', 'PHARMACIST'],
+  'db:confirmGrn': ['ADMIN', 'PHARMACIST'],
+  'db:cancelGrn': ['ADMIN', 'PHARMACIST'],
+  'db:postPurchaseReturn': ['ADMIN', 'PHARMACIST'],
+  'db:getPurchaseReceipts': ['ADMIN', 'PHARMACIST', 'CASHIER'],
   'db:logDpdp': ['ADMIN', 'PHARMACIST', 'CASHIER', 'PHARMACY_ASSISTANT'],
   'db:saveSetting': ['ADMIN', 'PHARMACIST'],
   'db:saveBackupSnapshot': ['ADMIN'],
@@ -360,6 +365,33 @@ function registerIpcHandlers() {
       throw new Error(`Forbidden: Setting key '${key}' is not permitted for renderer modification.`);
     }
     return db.saveSetting(key, val);
+  });
+
+  handleDbIpc('db:postPurchaseReceipt', async (_, receipt) => {
+    assertPermission('db:postPurchaseReceipt');
+    return db.postPurchaseReceipt(receipt, activeSession.user, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:confirmGrn', async (_, grnId) => {
+    assertPermission('db:confirmGrn');
+    return db.confirmGrn(grnId, activeSession.pharmacy.id, activeSession.user);
+  });
+
+  handleDbIpc('db:cancelGrn', async (_, data) => {
+    assertPermission('db:cancelGrn');
+    const grnId = typeof data === 'string' ? data : data?.grnId;
+    const reason = typeof data === 'string' ? 'Cancelled by operator' : (data?.reason || 'Cancelled by operator');
+    return db.cancelGrn(grnId, reason, activeSession.pharmacy.id, activeSession.user);
+  });
+
+  handleDbIpc('db:postPurchaseReturn', async (_, params) => {
+    assertPermission('db:postPurchaseReturn');
+    return db.postPurchaseReturn(params, activeSession.user, activeSession.pharmacy.id);
+  });
+
+  handleDbIpc('db:getPurchaseReceipts', async () => {
+    assertPermission('db:getPurchaseReceipts');
+    return db.getPurchaseReceipts(activeSession.pharmacy.id);
   });
 
   handleDbIpc('db:saveBackupSnapshot', async (_, snapshot) => {

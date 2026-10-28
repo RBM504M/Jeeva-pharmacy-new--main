@@ -39,6 +39,8 @@ describe('Offline SQLite Database Engine (node:sqlite)', () => {
     expect(tables).toContain('dpdp_logs');
     expect(tables).toContain('backup_snapshots');
     expect(tables).toContain('app_settings');
+    expect(tables).toContain('purchase_receipts');
+    expect(tables).toContain('purchase_receipt_items');
   });
 
   test('performs CRUD operations for pharmaceutical products using saveProduct and getAllData', () => {

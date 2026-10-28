@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { usePharmacy } from '../../context/PharmacyContext';
 import { formatINR } from '../../types/pharmacy';
+import { InwardPurchaseInvoice } from '../../types/shopaid';
 
 export type GrnTab =
   | 'NEW_GRN'
@@ -97,7 +98,7 @@ interface GrnRecord {
 export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
   initialTab = 'GRN_REGISTER',
 }) => {
-  const { vendors, products, addBatch, inwardStockBatch } = usePharmacy();
+  const { vendors, products, purchaseInvoices, addInwardPurchaseInvoice, confirmGrn, cancelGrn } = usePharmacy();
 
   const [activeTab, setActiveTab] = useState<GrnTab>(normalizeGrnTab(initialTab));
   const [searchQuery, setSearchQuery] = useState('');
@@ -119,20 +120,74 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // GRN Records (Empty default state)
-  const [grnList, setGrnList] = useState<GrnRecord[]>([]);
+  // GRN Records mapped authoritatively from purchase invoices ledger
+  const grnList: GrnRecord[] = useMemo(() => {
+    return purchaseInvoices.map((p) => {
+      const totalReceived = p.items.reduce((sum, r) => sum + (r.quantityStrips || 0), 0);
+      const totalAccepted = p.items.reduce(
+        (sum, r) =>
+          sum +
+          (r.acceptedStrips !== undefined
+            ? r.acceptedStrips
+            : Math.max(0, (r.quantityStrips || 0) + (r.freeStrips || 0) - (r.rejectedStrips || 0))),
+        0
+      );
+      const totalRejected = p.items.reduce((sum, r) => sum + (r.rejectedStrips || 0), 0);
+      return {
+        id: p.id,
+        grnNumber: p.grnNumber,
+        grnDate: p.grnDate,
+        poNumber: p.poNumber,
+        supplierInvoiceNo: p.vendorInvoiceNo,
+        supplierInvoiceDate: p.invoiceDate,
+        vendorId: p.vendorId,
+        vendorName: p.vendorName,
+        itemsCount: p.items.length,
+        totalReceivedUnits: totalReceived,
+        totalAcceptedUnits: totalAccepted,
+        totalRejectedUnits: totalRejected,
+        grossAmount: p.taxableTotal || p.subtotal || 0,
+        taxAmount: (p.cgstTotal || 0) + (p.sgstTotal || 0) + (p.igstTotal || 0),
+        netPayableAmount: p.grandTotal || 0,
+        status: (p.status as any) || 'POSTED_TO_STOCK',
+        remarks: p.notes || '',
+        cancelReason: p.cancelReason,
+        items: p.items.map((it) => ({
+          productName: it.productName,
+          batchNumber: it.batchNumber,
+          expiryDate: it.expiryDate,
+          stripSize: it.packing || 10,
+          receivedQty: it.quantityStrips,
+          freeQty: it.freeStrips,
+          rejectedQty: it.rejectedStrips || 0,
+          acceptedQty:
+            it.acceptedStrips !== undefined
+              ? it.acceptedStrips
+              : Math.max(0, it.quantityStrips + it.freeStrips - (it.rejectedStrips || 0)),
+          unitCost: it.costPricePerStrip,
+          mrp: it.mrpPerStrip,
+          gstRate: it.gstRate,
+          taxableAmount: it.taxableAmount,
+          lineTotal: it.lineTotal,
+        })),
+      };
+    });
+  }, [purchaseInvoices]);
 
   // Selected Detail Modal & Actions
   const [selectedGrn, setSelectedGrn] = useState<GrnRecord | null>(null);
   const [showConfirmStockModal, setShowConfirmStockModal] = useState<boolean>(false);
   const [confirmTargetId, setConfirmTargetId] = useState<string>('');
+  const [isConfirming, setIsConfirming] = useState<boolean>(false);
 
   const [showCancelModal, setShowCancelModal] = useState<boolean>(false);
   const [cancelTargetId, setCancelTargetId] = useState<string>('');
   const [cancelReasonInput, setCancelReasonInput] = useState<string>('');
+  const [isCancelling, setIsCancelling] = useState<boolean>(false);
 
   // New GRN Modal
   const [showNewGrnModal, setShowNewGrnModal] = useState<boolean>(false);
+  const [isSubmittingNew, setIsSubmittingNew] = useState<boolean>(false);
   const [newGrnVendorId, setNewGrnVendorId] = useState<string>(vendors[0]?.id || '');
   const [newGrnPoNumber, setNewGrnPoNumber] = useState<string>('PO-2026-001');
   const [newGrnSupplierInvNo, setNewGrnSupplierInvNo] = useState<string>('INV-' + Math.floor(1000 + Math.random() * 9000));
@@ -171,97 +226,123 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
     setNewGrnRows(updated);
   };
 
-  const handleCreateGrn = (e: React.FormEvent) => {
+  const handleCreateGrn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingNew) return;
     const vendor = vendors.find((v) => v.id === newGrnVendorId) || vendors[0];
-    const grnNo = `GRN-${new Date().getFullYear()}-${String(grnList.length + 92).padStart(3, '0')}`;
+    if (!vendor) {
+      alert('Please select a vendor.');
+      return;
+    }
+    const grnNo = `GRN-${new Date().getFullYear()}-${String(purchaseInvoices.length + 1).padStart(3, '0')}`;
 
-    const totalReceived = newGrnRows.reduce((sum, r) => sum + r.receivedQty, 0);
-    const totalAccepted = newGrnRows.reduce((sum, r) => sum + r.acceptedQty, 0);
-    const totalRejected = newGrnRows.reduce((sum, r) => sum + r.rejectedQty, 0);
+    const inwardItems = newGrnRows.map((r) => {
+      const prod = products.find((p) => p.name === r.productName) || products[0];
+      return {
+        productId: prod?.id || 'prod_unknown',
+        productName: r.productName,
+        genericComposition: prod?.genericComposition || '',
+        packing: r.stripSize,
+        quantityStrips: r.receivedQty,
+        freeStrips: r.freeQty,
+        rejectedStrips: r.rejectedQty,
+        acceptedStrips: r.acceptedQty,
+        batchNumber: r.batchNumber,
+        expiryDate: r.expiryDate,
+        costPricePerStrip: r.unitCost,
+        mrpPerStrip: r.mrp,
+        discountPercent: 0,
+        gstRate: r.gstRate as any,
+        taxableAmount: r.taxableAmount,
+        cgstAmount: Number(((r.lineTotal - r.taxableAmount) / 2).toFixed(2)),
+        sgstAmount: Number(((r.lineTotal - r.taxableAmount) / 2).toFixed(2)),
+        igstAmount: 0,
+        lineTotal: r.lineTotal,
+      };
+    });
+
     const gross = newGrnRows.reduce((sum, r) => sum + r.taxableAmount, 0);
     const tax = newGrnRows.reduce((sum, r) => sum + (r.lineTotal - r.taxableAmount), 0);
-    const net = gross + tax;
+    const net = Number((gross + tax).toFixed(2));
 
-    const newRecord: GrnRecord = {
+    const newRecord: InwardPurchaseInvoice = {
       id: `grn-${Date.now()}`,
       grnNumber: grnNo,
       grnDate: new Date().toISOString().split('T')[0],
       poNumber: newGrnPoNumber,
-      supplierInvoiceNo: newGrnSupplierInvNo,
-      supplierInvoiceDate: newGrnSupplierInvDate,
-      vendorId: vendor?.id || 'v1',
-      vendorName: vendor?.companyName || vendor?.name || 'Authorized Wholesaler',
-      itemsCount: newGrnRows.length,
-      totalReceivedUnits: totalReceived,
-      totalAcceptedUnits: totalAccepted,
-      totalRejectedUnits: totalRejected,
-      grossAmount: gross,
-      taxAmount: tax,
-      netPayableAmount: net,
+      vendorId: vendor.id,
+      vendorName: vendor.companyName,
+      vendorInvoiceNo: newGrnSupplierInvNo,
+      invoiceDate: newGrnSupplierInvDate,
+      paymentDueDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split('T')[0],
+      items: inwardItems,
+      subtotal: gross,
+      discountTotal: 0,
+      taxableTotal: gross,
+      cgstTotal: Number((tax / 2).toFixed(2)),
+      sgstTotal: Number((tax / 2).toFixed(2)),
+      igstTotal: 0,
+      roundOff: 0,
+      grandTotal: net,
+      paymentStatus: 'CREDIT_PENDING',
+      paymentMode: 'CREDIT_DUE',
       status: 'PENDING_CONFIRMATION',
-      remarks: newGrnRemarks,
-      items: newGrnRows,
+      notes: newGrnRemarks,
+      createdAt: new Date().toISOString(),
     };
 
-    setGrnList([newRecord, ...grnList]);
-    setShowNewGrnModal(false);
-    showToast(`✓ Goods Receipt ${grnNo} recorded. Ready for stock verification.`);
-    setActiveTab('GRN_REGISTER');
+    setIsSubmittingNew(true);
+    try {
+      const res = await addInwardPurchaseInvoice(newRecord);
+      if (!res.success) {
+        alert(res.error || 'Failed to save GRN.');
+        return;
+      }
+      setShowNewGrnModal(false);
+      showToast(`✓ Goods Receipt ${grnNo} recorded. Ready for stock verification.`);
+      setActiveTab('GRN_REGISTER');
+    } finally {
+      setIsSubmittingNew(false);
+    }
   };
 
-  const handleConfirmStockPosting = () => {
-    setGrnList((prev) =>
-      prev.map((g) => {
-        if (g.id === confirmTargetId) {
-          // Post each item into batch stock
-          g.items.forEach((item) => {
-            const prod = products.find((p) => p.name === item.productName);
-            if (prod) {
-              inwardStockBatch(
-                {
-                  productId: prod.id,
-                  batchNumber: item.batchNumber,
-                  expiryDate: item.expiryDate,
-                  manufacturingDate: '2026-01-01',
-                  costPricePerStrip: item.unitCost,
-                  mrpPerStrip: item.mrp,
-                  sellingPricePerStrip: item.mrp,
-                  totalTablets: item.acceptedQty * item.stripSize,
-                  gstRate: item.gstRate as any,
-                  vendorId: g.vendorId,
-                },
-                g.supplierInvoiceNo
-              );
-            }
-          });
-          return { ...g, status: 'POSTED_TO_STOCK' };
-        }
-        return g;
-      })
-    );
-
-    setShowConfirmStockModal(false);
-    setConfirmTargetId('');
-    showToast('✓ GRN Confirmed: Accepted quantities successfully posted to live inventory stock!');
+  const handleConfirmStockPosting = async () => {
+    if (!confirmTargetId || isConfirming) return;
+    setIsConfirming(true);
+    try {
+      const res = await confirmGrn(confirmTargetId);
+      if (!res.success) {
+        alert(res.error || 'Failed to confirm GRN stock posting.');
+        return;
+      }
+      setShowConfirmStockModal(false);
+      setConfirmTargetId('');
+      showToast('✓ GRN Confirmed: Accepted quantities successfully posted to live inventory stock!');
+    } finally {
+      setIsConfirming(false);
+    }
   };
 
-  const handleCancelGrn = () => {
+  const handleCancelGrn = async () => {
     if (!cancelReasonInput.trim()) {
       alert('Please specify cancellation reason.');
       return;
     }
-    setGrnList((prev) =>
-      prev.map((g) =>
-        g.id === cancelTargetId
-          ? { ...g, status: 'CANCELLED', cancelReason: cancelReasonInput }
-          : g
-      )
-    );
-    setShowCancelModal(false);
-    setCancelTargetId('');
-    setCancelReasonInput('');
-    showToast('✓ GRN Cancelled and stock posting reversed safely.');
+    if (isCancelling) return;
+    setIsCancelling(true);
+    try {
+      const res = await cancelGrn(cancelTargetId, cancelReasonInput);
+      if (!res.success) {
+        alert(res.error || 'Failed to cancel GRN.');
+        return;
+      }
+      setShowCancelModal(false);
+      setCancelTargetId('');
+      setCancelReasonInput('');
+      showToast('✓ GRN Cancelled and stock posting reversed safely.');
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   // Filtered List
@@ -834,10 +915,13 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
               </button>
               <button
                 type="button"
+                disabled={isConfirming}
                 onClick={handleConfirmStockPosting}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold cursor-pointer"
+                className={`px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold ${
+                  isConfirming ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                }`}
               >
-                Confirm Stock Posting
+                {isConfirming ? 'Posting to Stock...' : 'Confirm Stock Posting'}
               </button>
             </div>
           </div>
@@ -877,10 +961,13 @@ export const GrnManagementView: React.FC<GrnManagementViewProps> = ({
               </button>
               <button
                 type="button"
+                disabled={isCancelling}
                 onClick={handleCancelGrn}
-                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold cursor-pointer"
+                className={`px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-semibold ${
+                  isCancelling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                }`}
               >
-                Confirm Cancellation
+                {isCancelling ? 'Cancelling...' : 'Confirm Cancellation'}
               </button>
             </div>
           </div>

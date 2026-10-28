@@ -10,6 +10,7 @@ import {
   PrinterSettings,
   AutomatedBackupConfig,
 } from './pharmacy';
+import { InwardPurchaseInvoice } from './shopaid';
 
 export interface ElectronAPI {
   isElectron: boolean;
@@ -21,6 +22,8 @@ export interface ElectronAPI {
     stockAuditLogs: StockAuditLogEntry[];
     dpdpLogs: DpdpLogEntry[];
     backupSnapshots: BackupSnapshot[];
+    purchaseInvoices?: InwardPurchaseInvoice[];
+    purchaseReceipts?: InwardPurchaseInvoice[];
     settings: {
       printer_settings?: PrinterSettings;
       user_profile?: UserProfile;
@@ -43,6 +46,11 @@ export interface ElectronAPI {
   saveSetting: (key: string, val: any) => Promise<{ success: boolean; error?: string }>;
   saveBackupSnapshot: (snapshot: BackupSnapshot) => Promise<{ success: boolean; error?: string }>;
   restoreBackup: (backupData: any) => Promise<{ success: boolean; error?: string }>;
+  postPurchaseReceipt: (receipt: any) => Promise<{ success: boolean; error?: string; receipt?: InwardPurchaseInvoice; batches?: Batch[]; vendor?: Vendor; auditLogs?: StockAuditLogEntry[] }>;
+  confirmGrn: (grnId: string) => Promise<{ success: boolean; error?: string; receipt?: InwardPurchaseInvoice; batches?: Batch[]; vendor?: Vendor; auditLogs?: StockAuditLogEntry[] }>;
+  cancelGrn: (data: { grnId: string; reason: string }) => Promise<{ success: boolean; error?: string }>;
+  postPurchaseReturn: (params: { productId: string; batchId: string; vendorId?: string; returnTablets: number; reason: string; debitNoteNumber?: string }) => Promise<{ success: boolean; error?: string; batch?: Batch; vendor?: Vendor; auditEntry?: StockAuditLogEntry }>;
+  getPurchaseReceipts: () => Promise<InwardPurchaseInvoice[]>;
   printReceipt: (options?: { silent?: boolean; deviceName?: string }) => Promise<{ success: boolean; error?: string }>;
   getAppInfo: () => Promise<{
     version: string;
