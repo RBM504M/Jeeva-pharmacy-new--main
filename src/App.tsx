@@ -52,33 +52,35 @@ import { Product, Batch, calculateExpiryZone, formatDualUnitStock, formatINR } f
 import { ClassicDashboardView } from './components/dashboard/ClassicDashboardView';
 import { PosBillingView } from './components/pos/PosBillingView';
 import { InventoryManagement } from './components/inventory/InventoryManagement';
-import { AnalyticsDashboard } from './components/analytics/AnalyticsDashboard';
-import { VendorManagement } from './components/vendors/VendorManagement';
-import { DpdpAuditLogView } from './components/dpdp/DpdpAuditLogView';
-import { SettingsView } from './components/settings/SettingsView';
-import { StockAuditLog } from './components/inventory/StockAuditLog';
-import { AutomatedBackupConfigView } from './components/settings/AutomatedBackupConfigView';
-import { BillCopiesView } from './components/sales/BillCopiesView';
-import { PurchaseEntryView } from './components/purchase/PurchaseEntryView';
-import { OrderManagementView } from './components/orders/OrderManagementView';
-import { ScheduleRegisterView } from './components/reports/ScheduleRegisterView';
-import { PrescriptionRegisterView } from './components/reports/PrescriptionRegisterView';
-import { SalesReportsView } from './components/reports/SalesReportsView';
-import { InventoryReportsView } from './components/reports/InventoryReportsView';
-import { GstReportsView } from './components/gst/GstReportsView';
-import { MastersManagementView } from './components/masters/MastersManagementView';
-import { ReportsSuiteView } from './components/reports/ReportsSuiteView';
 import { ProductBriefModal } from './components/reports/ProductBriefModal';
-import { PurchaseOrderView } from './components/orders/PurchaseOrderView';
-import { GrnManagementView } from './components/purchase/GrnManagementView';
-import { ExpiryManagementView } from './components/expiry/ExpiryManagementView';
-import { BatchTraceabilityView } from './components/batch/BatchTraceabilityView';
-import { AccountsModuleView } from './components/accounts/AccountsModuleView';
-import { HrPayrollView } from './components/hr/HrPayrollView';
 import { SidebarNavigation } from './components/navigation/SidebarNavigation';
 import { SignInScreen } from './components/auth/SignInScreen';
 import { OnboardingWizard } from './components/auth/OnboardingWizard';
-import { UserManagementView } from './components/auth/UserManagementView';
+
+// Code-split secondary heavy modules with React.lazy
+const AnalyticsDashboard = React.lazy(() => import('./components/analytics/AnalyticsDashboard').then((m) => ({ default: m.AnalyticsDashboard })));
+const VendorManagement = React.lazy(() => import('./components/vendors/VendorManagement').then((m) => ({ default: m.VendorManagement })));
+const DpdpAuditLogView = React.lazy(() => import('./components/dpdp/DpdpAuditLogView').then((m) => ({ default: m.DpdpAuditLogView })));
+const SettingsView = React.lazy(() => import('./components/settings/SettingsView').then((m) => ({ default: m.SettingsView })));
+const StockAuditLog = React.lazy(() => import('./components/inventory/StockAuditLog').then((m) => ({ default: m.StockAuditLog })));
+const AutomatedBackupConfigView = React.lazy(() => import('./components/settings/AutomatedBackupConfigView').then((m) => ({ default: m.AutomatedBackupConfigView })));
+const BillCopiesView = React.lazy(() => import('./components/sales/BillCopiesView').then((m) => ({ default: m.BillCopiesView })));
+const PurchaseEntryView = React.lazy(() => import('./components/purchase/PurchaseEntryView').then((m) => ({ default: m.PurchaseEntryView })));
+const OrderManagementView = React.lazy(() => import('./components/orders/OrderManagementView').then((m) => ({ default: m.OrderManagementView })));
+const ScheduleRegisterView = React.lazy(() => import('./components/reports/ScheduleRegisterView').then((m) => ({ default: m.ScheduleRegisterView })));
+const PrescriptionRegisterView = React.lazy(() => import('./components/reports/PrescriptionRegisterView').then((m) => ({ default: m.PrescriptionRegisterView })));
+const SalesReportsView = React.lazy(() => import('./components/reports/SalesReportsView').then((m) => ({ default: m.SalesReportsView })));
+const InventoryReportsView = React.lazy(() => import('./components/reports/InventoryReportsView').then((m) => ({ default: m.InventoryReportsView })));
+const GstReportsView = React.lazy(() => import('./components/gst/GstReportsView').then((m) => ({ default: m.GstReportsView })));
+const MastersManagementView = React.lazy(() => import('./components/masters/MastersManagementView').then((m) => ({ default: m.MastersManagementView })));
+const ReportsSuiteView = React.lazy(() => import('./components/reports/ReportsSuiteView').then((m) => ({ default: m.ReportsSuiteView })));
+const PurchaseOrderView = React.lazy(() => import('./components/orders/PurchaseOrderView').then((m) => ({ default: m.PurchaseOrderView })));
+const GrnManagementView = React.lazy(() => import('./components/purchase/GrnManagementView').then((m) => ({ default: m.GrnManagementView })));
+const ExpiryManagementView = React.lazy(() => import('./components/expiry/ExpiryManagementView').then((m) => ({ default: m.ExpiryManagementView })));
+const BatchTraceabilityView = React.lazy(() => import('./components/batch/BatchTraceabilityView').then((m) => ({ default: m.BatchTraceabilityView })));
+const AccountsModuleView = React.lazy(() => import('./components/accounts/AccountsModuleView').then((m) => ({ default: m.AccountsModuleView })));
+const HrPayrollView = React.lazy(() => import('./components/hr/HrPayrollView').then((m) => ({ default: m.HrPayrollView })));
+const UserManagementView = React.lazy(() => import('./components/auth/UserManagementView').then((m) => ({ default: m.UserManagementView })));
 import {
   exportSalesLedgerCsv,
   exportInventoryValuationCsv,
@@ -634,7 +636,15 @@ const PharmacyAppContent: React.FC = () => {
 
         {/* Content View Container */}
         <main className="p-4 sm:p-6 flex-1">
-          {currentView === 'DASHBOARD' && (
+          <React.Suspense
+            fallback={
+              <div className="flex flex-col items-center justify-center min-h-[350px] text-slate-500 space-y-3">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-600"></div>
+                <p className="text-xs font-medium">Loading module...</p>
+              </div>
+            }
+          >
+            {currentView === 'DASHBOARD' && (
             <ClassicDashboardView
               onNavigateToPOS={() => handleNavigate('POS')}
               onNavigateToInventory={() => handleNavigate('INVENTORY')}
@@ -853,6 +863,7 @@ const PharmacyAppContent: React.FC = () => {
           {currentView === 'REPORTS_SUITE' && (
             <ReportsSuiteView initialTab={reportsSuiteSubTab} />
           )}
+          </React.Suspense>
         </main>
       </div>
 

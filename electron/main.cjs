@@ -315,13 +315,33 @@ function registerIpcHandlers() {
     if (typeof targetPath === 'string' && targetPath.trim()) {
       try {
         const candidate = path.resolve(targetPath);
+        // Disallow UNC or remote network shares to prevent NTLM leak / arbitrary execution
+        if (candidate.startsWith('\\\\') || candidate.startsWith('//')) {
+          return { success: false, error: 'Remote network paths are not allowed' };
+        }
         const stat = fs.statSync(candidate);
-        resolved = stat.isDirectory() ? candidate : path.dirname(candidate);
+        const folder = stat.isDirectory() ? candidate : path.dirname(candidate);
+
+        // Restrict to safe user locations (userData, documents, downloads, desktop)
+        const allowedRoots = [
+          app.getPath('userData'),
+          app.getPath('documents'),
+          app.getPath('downloads'),
+          app.getPath('desktop'),
+        ].map((p) => path.normalize(p).toLowerCase());
+
+        const normalizedFolder = path.normalize(folder).toLowerCase();
+        const isAllowed = allowedRoots.some((root) => normalizedFolder.startsWith(root));
+        if (isAllowed) {
+          resolved = folder;
+        } else {
+          resolved = defaultPath;
+        }
       } catch {
         resolved = defaultPath;
       }
     }
-    shell.openPath(resolved);
+    await shell.openPath(resolved);
     return { success: true };
   });
 }

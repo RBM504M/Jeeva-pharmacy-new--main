@@ -51,7 +51,7 @@ export const PrintTemplates: React.FC<PrintTemplatesProps> = ({
             </div>
             <div className="flex justify-between">
               <span>Patient: <strong>{invoice.prescription.patientName}</strong></span>
-              <span>Mob: {invoice.prescription.patientContact || 'N/A'}</span>
+              <span>Mob: {invoice.prescription.patientContact ? maskPhoneDPDP(invoice.prescription.patientContact) : 'N/A'}</span>
             </div>
             {invoice.prescription.doctorName && (
               <div className="flex justify-between">
@@ -221,7 +221,9 @@ export const PrintTemplates: React.FC<PrintTemplatesProps> = ({
                 <span className="text-slate-500">Patient Name:</span>
                 <span className="col-span-2 font-semibold">{invoice.prescription.patientName}</span>
                 <span className="text-slate-500">Contact No:</span>
-                <span className="col-span-2 font-mono">{invoice.prescription.patientContact || 'N/A'}</span>
+                <span className="col-span-2 font-mono">
+                  {invoice.prescription.patientContact ? maskPhoneDPDP(invoice.prescription.patientContact) : 'N/A'}
+                </span>
                 <span className="text-slate-500">Payment Mode:</span>
                 <span className="col-span-2 font-semibold text-emerald-800">{invoice.paymentMethod}</span>
                 <span className="text-slate-500">Billed By:</span>

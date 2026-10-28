@@ -109,6 +109,7 @@ export const PosBillingView: React.FC = () => {
   const [billType, setBillType] = useState('CASH BILL');
   const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
   const [preConfirmAction, setPreConfirmAction] = useState<'SAVE' | 'PRINT'>('SAVE');
+  const [liveAnnouncement, setLiveAnnouncement] = useState<string>('');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const draftCodeInputRef = useRef<HTMLInputElement>(null);
@@ -306,6 +307,7 @@ export const PosBillingView: React.FC = () => {
     };
 
     setCartItems((prev) => [...prev, newItem]);
+    setLiveAnnouncement(`Added ${product.name} to bill. Quantity: ${quantity} ${unitType}.`);
     setSearchQuery('');
     setSelectedProductId('');
     setSelectedBatchId('');
@@ -601,7 +603,16 @@ export const PosBillingView: React.FC = () => {
     const roundOff = Number((grandTotal - unroundedGross).toFixed(2));
     const totalTax = totalCgst + totalSgst + totalIgst;
 
-    const activeSlabs = Object.values(slabMap).filter((s) => s.taxableAmount > 0);
+    const activeSlabs = Object.values(slabMap)
+      .filter((s) => s.taxableAmount > 0)
+      .map((s) => ({
+        gstRate: s.gstRate,
+        taxableAmount: Number(s.taxableAmount.toFixed(2)),
+        cgstAmount: Number(s.cgstAmount.toFixed(2)),
+        sgstAmount: Number(s.sgstAmount.toFixed(2)),
+        igstAmount: Number(s.igstAmount.toFixed(2)),
+        totalTax: Number(s.totalTax.toFixed(2)),
+      }));
 
     return {
       subtotal: Number(subtotal.toFixed(2)),
@@ -705,6 +716,11 @@ export const PosBillingView: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      {/* Screen reader live region for fast counter actions */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {liveAnnouncement}
+      </div>
+
       {/* Test & Terminal Companion Bar */}
       <div className="bg-slate-50 border border-slate-200/80 px-3.5 py-1.5 rounded-lg flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
         <div className="flex items-center gap-2">
@@ -1909,7 +1925,12 @@ export const PosBillingView: React.FC = () => {
       
       {/* Review & Edit All Fields Modal Before Confirming Save or Print */}
       {showReviewModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="review-bill-modal-title"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
           <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="px-6 py-4 bg-gradient-to-r from-sky-700 via-sky-800 to-indigo-900 text-white flex items-center justify-between shrink-0">
@@ -1918,7 +1939,7 @@ export const PosBillingView: React.FC = () => {
                   <FileText className="w-6 h-6 text-sky-200" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold">Review & Edit Bill Before Confirmation</h3>
+                  <h3 id="review-bill-modal-title" className="text-lg font-bold">Review & Edit Bill Before Confirmation</h3>
                   <p className="text-xs text-sky-100">
                     Verify and modify customer details, doctor details, pricing, discount, and batch before saving or printing.
                   </p>
@@ -2301,11 +2322,16 @@ export const PosBillingView: React.FC = () => {
 
       {/* Invoice Generated & Print Modal */}
       {showPrintModal && completedInvoice && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="print-invoice-modal-title"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
           <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between no-print">
               <div>
-                <h3 className="text-base font-bold text-slate-800">
+                <h3 id="print-invoice-modal-title" className="text-base font-bold text-slate-800">
                   Invoice #{completedInvoice.invoiceNumber} Generated
                 </h3>
                 <p className="text-xs text-slate-500 font-mono">
@@ -2368,7 +2394,12 @@ export const PosBillingView: React.FC = () => {
 
       {/* Digital Pharmacy E-Prescription QR Reader Modal */}
       {showQrModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="qr-reader-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto"
+        >
           <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
             <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
@@ -2377,7 +2408,7 @@ export const PosBillingView: React.FC = () => {
                   <QrCode className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm">
+                  <h3 id="qr-reader-modal-title" className="font-bold text-slate-900 text-sm">
                     Digital Pharmacy E-Prescription QR Reader
                   </h3>
                   <p className="text-[11px] text-slate-500">
@@ -2457,14 +2488,19 @@ export const PosBillingView: React.FC = () => {
       )}
       {/* Product Lookup & Batch Selection Modal (F2) */}
       {isLookupModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="catalog-lookup-modal-title"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
           <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in duration-200">
             {/* Modal Header */}
             <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Package className="w-5 h-5 text-sky-400" />
                 <div>
-                  <h3 className="font-bold text-sm">Product Catalog & Batch Browser (F2)</h3>
+                  <h3 id="catalog-lookup-modal-title" className="font-bold text-sm">Product Catalog & Batch Browser (F2)</h3>
                   <p className="text-[11px] text-slate-300">
                     Search pharmacy inventory by medicine name, salt, barcode or HSN to add directly to current bill.
                   </p>

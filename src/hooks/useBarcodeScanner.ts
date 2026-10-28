@@ -30,6 +30,13 @@ export function useBarcodeScanner({
     (e: KeyboardEvent) => {
       if (!isEnabled) return;
 
+      // Allow multiline text entry in textareas without Enter key interception
+      const target = e.target as HTMLElement | null;
+      if (target && target.tagName === 'TEXTAREA') {
+        bufferRef.current = '';
+        return;
+      }
+
       const currentTime = performance.now();
       const timeSinceLastKey = currentTime - lastKeyTimeRef.current;
       lastKeyTimeRef.current = currentTime;

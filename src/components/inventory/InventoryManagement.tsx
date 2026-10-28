@@ -353,22 +353,22 @@ export const InventoryManagement: React.FC<InventoryManagementProps> = ({
                       </div>
                       <div className="text-[10px] mt-0.5">
                         {expiry.zone === 'CRITICAL_30' && (
-                          <span className="px-1.5 py-0.2 bg-rose-50 text-rose-600 border border-rose-200 rounded font-bold">
+                          <span className="px-1.5 py-0.2 bg-rose-100 text-rose-800 border border-rose-300 rounded font-bold">
                             {expiry.days}d (Critical)
                           </span>
                         )}
                         {expiry.zone === 'WARNING_60' && (
-                          <span className="px-1.5 py-0.2 bg-amber-50 text-amber-600 border border-amber-200 rounded font-bold">
+                          <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded font-bold">
                             {expiry.days}d (Warning)
                           </span>
                         )}
                         {expiry.zone === 'CAUTION_90' && (
-                          <span className="px-1.5 py-0.2 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded font-medium">
+                          <span className="px-1.5 py-0.2 bg-yellow-100 text-yellow-900 border border-yellow-300 rounded font-medium">
                             {expiry.days}d (Caution)
                           </span>
                         )}
                         {expiry.zone === 'SAFE' && (
-                          <span className="text-slate-400 font-mono text-[10px]">Safe</span>
+                          <span className="text-slate-500 font-mono text-[10px]">Safe</span>
                         )}
                       </div>
                     </td>
@@ -392,7 +392,7 @@ export const InventoryManagement: React.FC<InventoryManagementProps> = ({
                         ({stock.totalTablets} atomic units)
                       </div>
                       {stock.isLowStock && (
-                        <span className="text-[9px] text-orange-700 font-bold bg-orange-50 border border-orange-200 px-1 py-0.2 rounded inline-block mt-0.5">
+                        <span className="text-[9px] text-orange-950 font-bold bg-orange-100 border border-orange-300 px-1 py-0.2 rounded inline-block mt-0.5">
                           Low Stock
                         </span>
                       )}
