@@ -4,7 +4,7 @@
   "description": "Indian Retail Pharmacy Management & POS System",
   "author": "Jeeva Pharmacy",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --port=3000 --host=127.0.0.1",
@@ -20,7 +20,8 @@
     "pack:win": "vite build && electron-builder --win --dir",
     "build:electron": "vite build && electron-builder --win",
     "build:electron:arm64": "vite build && electron-builder --win --arm64",
-    "build:electron:x64": "vite build && electron-builder --win --x64"
+    "build:electron:x64": "vite build && electron-builder --win --x64",
+    "build:electron:all": "vite build && electron-builder --win --x64 --arm64"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.3",

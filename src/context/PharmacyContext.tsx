@@ -337,7 +337,7 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       localStorage.setItem(STORAGE_KEYS.THEME, themeId);
     } catch {}
     if (window.electronAPI?.saveSetting) {
-      window.electronAPI.saveSetting('active_theme', themeId).catch(() => {});
+      window.electronAPI.saveSetting('active_theme', themeId)?.catch?.(() => {});
     }
   };
 
@@ -403,8 +403,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.NAVIGATION_CONFIG, JSON.stringify(navigationConfig));
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('navigation_config', navigationConfig);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('navigation_config', navigationConfig)?.catch?.(() => {});
       }
     } catch (e) {
       console.warn('LocalStorage unavailable for navigation config', e);
@@ -638,8 +638,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
   useEffect(() => {
     try {
       localStorage.setItem('jeeva_pharmacy_backup_config_v1', JSON.stringify(backupConfig));
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('backup_config', backupConfig);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('backup_config', backupConfig)?.catch?.(() => {});
       }
     } catch (e) {
       console.warn('LocalStorage unavailable for backup config', e);
@@ -1336,8 +1336,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       lastBackupSizeBytes: sizeBytes,
     }));
 
-    if (window.electronAPI) {
-      window.electronAPI.saveBackupSnapshot(newSnapshot);
+    if (window.electronAPI && isAuthenticated) {
+      window.electronAPI.saveBackupSnapshot(newSnapshot)?.catch?.(() => {});
     }
 
     // Record an audit log for the backup action
@@ -1474,8 +1474,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.PRINTER, JSON.stringify(printerSettings));
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('printer_settings', printerSettings);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('printer_settings', printerSettings)?.catch?.(() => {});
       }
     } catch (e) {
       console.warn('LocalStorage unavailable for printer settings', e);
@@ -1485,8 +1485,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
   const updatePrinterSettings = (newSettings: Partial<PrinterSettings>) => {
     setPrinterSettings((prev) => {
       const updated = { ...prev, ...newSettings };
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('printer_settings', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('printer_settings', updated)?.catch?.(() => {});
       }
       return updated;
     });
@@ -1498,8 +1498,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
         ...prev,
         role,
       };
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('user_profile', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('user_profile', updated)?.catch?.(() => {});
       }
       return updated;
     });
@@ -2206,8 +2206,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
     } catch (e) {
       console.warn('LocalStorage save failed for sales returns', e);
     }
-    if (window.electronAPI) {
-      window.electronAPI.saveSetting('sales_returns', updatedReturns);
+    if (window.electronAPI && isAuthenticated) {
+      window.electronAPI.saveSetting('sales_returns', updatedReturns)?.catch?.(() => {});
     }
 
     // Check if fully returned
@@ -2375,8 +2375,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       }
     });
 
-    if (window.electronAPI) {
-      window.electronAPI.saveSetting('purchase_invoices', [newPurchase, ...purchaseInvoices]);
+    if (window.electronAPI && isAuthenticated) {
+      window.electronAPI.saveSetting('purchase_invoices', [newPurchase, ...purchaseInvoices])?.catch?.(() => {});
     }
 
     return { success: true, receipt: newPurchase };
@@ -2468,8 +2468,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       } catch (err) {
         console.error('Failed to save wanted book to localStorage', err);
       }
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('wanted_book', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('wanted_book', updated)?.catch?.(() => {});
       }
       return updated;
     });
@@ -2483,8 +2483,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       } catch (err) {
         console.error('Failed to update wanted book in localStorage', err);
       }
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('wanted_book', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('wanted_book', updated)?.catch?.(() => {});
       }
       return updated;
     });
@@ -2498,8 +2498,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       } catch (err) {
         console.error('Failed to delete wanted book item from localStorage', err);
       }
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('wanted_book', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('wanted_book', updated)?.catch?.(() => {});
       }
       return updated;
     });
@@ -2514,8 +2514,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       } catch (err) {
         console.error('Failed to save doctor to localStorage', err);
       }
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('doctors', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('doctors', updated)?.catch?.(() => {});
       }
       return updated;
     });
@@ -2529,8 +2529,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       } catch (err) {
         console.error('Failed to save customer to localStorage', err);
       }
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('customers', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('customers', updated)?.catch?.(() => {});
       }
       return updated;
     });
@@ -2544,8 +2544,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       } catch (err) {
         console.error('Failed to save sales rep to localStorage', err);
       }
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('sales_reps', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('sales_reps', updated)?.catch?.(() => {});
       }
       return updated;
     });
@@ -2559,8 +2559,8 @@ export const PharmacyProvider: React.FC<PharmacyProviderProps> = ({ children, in
       } catch (err) {
         console.error('Failed to save rack to localStorage', err);
       }
-      if (window.electronAPI) {
-        window.electronAPI.saveSetting('racks', updated);
+      if (window.electronAPI && isAuthenticated) {
+        window.electronAPI.saveSetting('racks', updated)?.catch?.(() => {});
       }
       return updated;
     });

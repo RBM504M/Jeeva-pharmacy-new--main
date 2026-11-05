@@ -608,35 +608,47 @@ function createWindow() {
 }
 
 if (isElectronRuntime) {
-  app.whenReady().then(() => {
-    try {
-      initializeDatabase();
-    } catch (err) {
-      logCrash(err, 'initializeDatabase');
-      dialog.showErrorBox(
-        'Database Error',
-        `Failed to initialize local pharmacy database:\n\n${err?.message || err}\n\nPlease check crash.log or contact technical support.`
-      );
-      return;
-    }
-
-    registerIpcHandlers();
-    createWindow();
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
+  const gotTheLock = app.requestSingleInstanceLock();
+  if (!gotTheLock) {
+    app.quit();
+  } else {
+    app.on('second-instance', () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
       }
     });
-  }).catch(err => {
-    logCrash(err, 'app.whenReady');
-  });
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      app.quit();
-    }
-  });
+    app.whenReady().then(() => {
+      try {
+        initializeDatabase();
+      } catch (err) {
+        logCrash(err, 'initializeDatabase');
+        dialog.showErrorBox(
+          'Database Error',
+          `Failed to initialize local pharmacy database:\n\n${err?.message || err}\n\nPlease check crash.log or contact technical support.`
+        );
+        return;
+      }
+
+      registerIpcHandlers();
+      createWindow();
+
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          createWindow();
+        }
+      });
+    }).catch(err => {
+      logCrash(err, 'app.whenReady');
+    });
+
+    app.on('window-all-closed', () => {
+      if (process.platform !== 'darwin') {
+        app.quit();
+      }
+    });
+  }
 }
 
 module.exports = {

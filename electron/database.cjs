@@ -77,6 +77,12 @@ class PharmacyDatabase {
       fs.mkdirSync(dbDir, { recursive: true });
     }
     this.db = new DatabaseSync(dbPath);
+    try {
+      this.db.exec('PRAGMA foreign_keys = ON;');
+      this.db.exec('PRAGMA journal_mode = WAL;');
+      this.db.exec('PRAGMA synchronous = NORMAL;');
+      this.db.exec('PRAGMA busy_timeout = 5000;');
+    } catch {}
     this.initSchema();
     this.runMigrations();
     this.createIndexes();
