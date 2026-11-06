@@ -13,3 +13,4 @@ coverage/
 *.deb
 *.rpm
 *.asar
+certs/*.pfx

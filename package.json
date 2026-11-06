@@ -70,7 +70,11 @@
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "signtoolOptions": {
+        "certificateFile": "certs/JeevaPharmacy.pfx",
+        "certificatePassword": "JeevaPharmacy2026!"
+      }
     },
     "nsis": {
       "oneClick": false,

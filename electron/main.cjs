@@ -132,29 +132,7 @@ function initializeDatabase() {
 
   db = new PharmacyDatabase(dbPath);
 
-  // Check remembered session using OS credential vault (safeStorage)
-  checkRememberedSession();
-}
-
-function checkRememberedSession() {
-  try {
-    const saved = db.getSetting('remembered_session');
-    if (saved && safeStorage && safeStorage.isEncryptionAvailable()) {
-      const token = safeStorage.decryptString(Buffer.from(saved, 'base64'));
-      const validation = db.validateSession(token);
-      if (validation.valid) {
-        activeSession = {
-          token,
-          user: validation.user,
-          pharmacy: validation.pharmacy,
-        };
-        console.log('[Auth] Restored remembered session securely for user:', validation.user.username);
-        return;
-      }
-    }
-  } catch (err) {
-    console.warn('[Auth] Remembered session check failed or expired:', err.message);
-  }
+  // For pharmacy statutory compliance, require explicit staff authentication on app opening/updates
   activeSession = null;
 }
 
@@ -162,11 +140,12 @@ function registerIpcHandlers() {
   // Authentication & Onboarding IPCs
   ipcMain.handle('auth:getAuthState', async () => {
     const isConfigured = db.isConfigured();
+    const pharmacy = activeSession?.pharmacy || db.getPharmacyAccount() || null;
     return {
       isConfigured,
       isAuthenticated: Boolean(activeSession),
       user: activeSession?.user || null,
-      pharmacy: activeSession?.pharmacy || null,
+      pharmacy,
     };
   });
 

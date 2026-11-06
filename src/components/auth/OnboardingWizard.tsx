@@ -5,9 +5,10 @@ import { PharmacyContext } from '../../context/PharmacyContext';
 
 interface OnboardingWizardProps {
   onComplete?: (payload: OnboardingPayload) => Promise<{ success: boolean; error?: string }>;
+  onNavigateToSignIn?: () => void;
 }
 
-export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete: propOnComplete }) => {
+export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete: propOnComplete, onNavigateToSignIn }) => {
   const context = useContext(PharmacyContext);
   const onComplete = propOnComplete || context?.setupOnboarding || (async () => ({ success: false, error: 'Context not initialized' }));
 
@@ -395,6 +396,18 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete: 
           )}
         </div>
       </div>
+
+      {onNavigateToSignIn && (
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            onClick={onNavigateToSignIn}
+            className="text-xs text-emerald-200 hover:text-white font-semibold cursor-pointer hover:underline transition-colors"
+          >
+            Already configured? Sign in to existing account &rarr;
+          </button>
+        </div>
+      )}
     </div>
   );
 };

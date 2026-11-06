@@ -6,9 +6,10 @@ import { PharmacyContext } from '../../context/PharmacyContext';
 interface SignInScreenProps {
   pharmacy?: PharmacyAccount | null;
   onLogin?: (credentials: { username: string; password: string; rememberMe: boolean }) => Promise<{ success: boolean; error?: string }>;
+  onNavigateToSetup?: () => void;
 }
 
-export const SignInScreen: React.FC<SignInScreenProps> = ({ pharmacy: propPharmacy, onLogin: propOnLogin }) => {
+export const SignInScreen: React.FC<SignInScreenProps> = ({ pharmacy: propPharmacy, onLogin: propOnLogin, onNavigateToSetup }) => {
   const context = useContext(PharmacyContext);
   const pharmacy = propPharmacy !== undefined ? propPharmacy : (context?.pharmacyAccount || null);
   const onLogin = propOnLogin || context?.login || (async () => ({ success: false, error: 'Context not initialized' }));
@@ -161,8 +162,20 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ pharmacy: propPharma
             </button>
           </form>
 
+          {onNavigateToSetup && (
+            <div className="mt-4 pt-3 text-center border-t border-slate-100">
+              <button
+                type="button"
+                onClick={onNavigateToSetup}
+                className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold cursor-pointer hover:underline transition-colors"
+              >
+                No accounts yet? Set up new pharmacy store account &rarr;
+              </button>
+            </div>
+          )}
+
           {/* Offline Security Footer Notice */}
-          <div className="mt-6 pt-5 border-t border-slate-100 flex items-center gap-2.5 text-[11px] text-slate-400">
+          <div className="mt-5 pt-4 border-t border-slate-100 flex items-center gap-2.5 text-[11px] text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>Encrypted with modern salted PBKDF2 • Offline Local Terminal</span>
           </div>
