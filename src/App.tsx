@@ -145,6 +145,7 @@ const PharmacyAppContent: React.FC = () => {
   } = usePharmacy();
 
   const [currentView, setCurrentView] = useState<AppView>('DASHBOARD');
+  const [authViewOverride, setAuthViewOverride] = useState<'LOGIN' | 'ONBOARDING' | null>(null);
   const [backupViewTab, setBackupViewTab] = useState<'AUTOMATED_CONFIG' | 'TAX_LEDGERS'>('AUTOMATED_CONFIG');
   const [auditTargetBatchId, setAuditTargetBatchId] = useState<string | undefined>(undefined);
   const [auditInitialModal, setAuditInitialModal] = useState<'ADJUSTMENT' | 'VENDOR_RETURN' | null>(null);
@@ -265,26 +266,37 @@ const PharmacyAppContent: React.FC = () => {
     );
   }
 
-  if (!isConfigured) {
+  // 1. Fresh install or empty database: No accounts exist -> Navigate to Account Creation / Onboarding
+  if (!isConfigured && authViewOverride !== 'LOGIN') {
     return (
       <OnboardingWizard
         onComplete={async (payload) => {
           const res = await setupOnboarding(payload);
           if (res.success) {
+            setAuthViewOverride(null);
             setCurrentView('DASHBOARD');
             showToast('Pharmacy account and administrator credentials configured successfully.');
           }
           return res;
         }}
+        onNavigateToSignIn={() => setAuthViewOverride('LOGIN')}
       />
     );
   }
 
-  if (!isAuthenticated) {
+  // 2. Unauthenticated: Account exists -> Require login before opening POS / Dashboard
+  if (!isAuthenticated || authViewOverride === 'LOGIN') {
     return (
       <SignInScreen
         pharmacy={pharmacyAccount}
-        onLogin={login}
+        onLogin={async (credentials) => {
+          const res = await login(credentials);
+          if (res.success) {
+            setAuthViewOverride(null);
+          }
+          return res;
+        }}
+        onNavigateToSetup={() => setAuthViewOverride('ONBOARDING')}
       />
     );
   }
